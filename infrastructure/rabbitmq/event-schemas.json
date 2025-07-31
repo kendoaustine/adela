@@ -1,0 +1,298 @@
+{
+  "eventSchemas": {
+    "auth.user.created": {
+      "description": "User account created",
+      "properties": {
+        "eventType": { "type": "string", "const": "user.created" },
+        "userId": { "type": "string", "format": "uuid" },
+        "email": { "type": "string", "format": "email" },
+        "phone": { "type": "string" },
+        "role": { 
+          "type": "string", 
+          "enum": ["hospital", "artisan", "household", "supplier", "delivery_driver", "platform_admin"] 
+        },
+        "profile": {
+          "type": "object",
+          "properties": {
+            "firstName": { "type": "string" },
+            "lastName": { "type": "string" },
+            "businessName": { "type": "string" }
+          }
+        },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "auth-service" }
+      },
+      "required": ["eventType", "userId", "email", "role", "timestamp", "service"]
+    },
+
+    "auth.user.verified": {
+      "description": "User account verified (email or phone)",
+      "properties": {
+        "eventType": { "type": "string", "const": "user.verified" },
+        "userId": { "type": "string", "format": "uuid" },
+        "verificationType": { "type": "string", "enum": ["email", "phone"] },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "auth-service" }
+      },
+      "required": ["eventType", "userId", "verificationType", "timestamp", "service"]
+    },
+
+    "auth.supplier.verified": {
+      "description": "Supplier verification status changed",
+      "properties": {
+        "eventType": { "type": "string", "const": "supplier.verified" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "verificationStatus": { "type": "string", "enum": ["approved", "rejected"] },
+        "verifiedBy": { "type": "string", "format": "uuid" },
+        "documents": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "documentType": { "type": "string" },
+              "status": { "type": "string" }
+            }
+          }
+        },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "auth-service" }
+      },
+      "required": ["eventType", "supplierId", "verificationStatus", "timestamp", "service"]
+    },
+
+    "orders.order.created": {
+      "description": "New order created",
+      "properties": {
+        "eventType": { "type": "string", "const": "order.created" },
+        "orderId": { "type": "string", "format": "uuid" },
+        "orderNumber": { "type": "string" },
+        "userId": { "type": "string", "format": "uuid" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "orderType": { "type": "string", "enum": ["regular", "emergency_sos", "recurring"] },
+        "priority": { "type": "string", "enum": ["low", "normal", "high", "emergency"] },
+        "totalAmount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "default": "NGN" },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "gasTypeId": { "type": "string", "format": "uuid" },
+              "quantity": { "type": "integer", "minimum": 1 },
+              "unitPrice": { "type": "number", "minimum": 0 },
+              "cylinderSize": { "type": "string" }
+            }
+          }
+        },
+        "deliveryAddress": {
+          "type": "object",
+          "properties": {
+            "addressId": { "type": "string", "format": "uuid" },
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" },
+            "city": { "type": "string" },
+            "state": { "type": "string" }
+          }
+        },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "orders-service" }
+      },
+      "required": ["eventType", "orderId", "userId", "supplierId", "orderType", "totalAmount", "items", "timestamp", "service"]
+    },
+
+    "orders.order.status.changed": {
+      "description": "Order status updated",
+      "properties": {
+        "eventType": { "type": "string", "const": "order.status.changed" },
+        "orderId": { "type": "string", "format": "uuid" },
+        "orderNumber": { "type": "string" },
+        "userId": { "type": "string", "format": "uuid" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "previousStatus": { 
+          "type": "string", 
+          "enum": ["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled", "refunded"] 
+        },
+        "newStatus": { 
+          "type": "string", 
+          "enum": ["pending", "confirmed", "preparing", "out_for_delivery", "delivered", "cancelled", "refunded"] 
+        },
+        "changedBy": { "type": "string", "format": "uuid" },
+        "reason": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "orders-service" }
+      },
+      "required": ["eventType", "orderId", "userId", "supplierId", "newStatus", "timestamp", "service"]
+    },
+
+    "orders.delivery.status.changed": {
+      "description": "Delivery status updated",
+      "properties": {
+        "eventType": { "type": "string", "const": "delivery.status.changed" },
+        "orderId": { "type": "string", "format": "uuid" },
+        "driverId": { "type": "string", "format": "uuid" },
+        "status": { "type": "string", "enum": ["assigned", "picked_up", "in_transit", "delivered", "failed"] },
+        "location": {
+          "type": "object",
+          "properties": {
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" }
+          }
+        },
+        "estimatedArrival": { "type": "string", "format": "date-time" },
+        "actualArrival": { "type": "string", "format": "date-time" },
+        "notes": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "orders-service" }
+      },
+      "required": ["eventType", "orderId", "status", "timestamp", "service"]
+    },
+
+    "orders.emergency.sos": {
+      "description": "Emergency SOS order created",
+      "properties": {
+        "eventType": { "type": "string", "const": "emergency.sos" },
+        "orderId": { "type": "string", "format": "uuid" },
+        "userId": { "type": "string", "format": "uuid" },
+        "userRole": { "type": "string", "enum": ["hospital", "artisan", "household"] },
+        "gasType": { "type": "string" },
+        "quantity": { "type": "integer", "minimum": 1 },
+        "location": {
+          "type": "object",
+          "properties": {
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" },
+            "address": { "type": "string" },
+            "city": { "type": "string" },
+            "state": { "type": "string" }
+          }
+        },
+        "emergencyContact": { "type": "string" },
+        "urgencyLevel": { "type": "string", "enum": ["high", "critical"] },
+        "maxResponseTime": { "type": "integer", "description": "Maximum response time in minutes" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "orders-service" }
+      },
+      "required": ["eventType", "orderId", "userId", "gasType", "quantity", "location", "urgencyLevel", "timestamp", "service"]
+    },
+
+    "supplier.inventory.updated": {
+      "description": "Supplier inventory levels changed",
+      "properties": {
+        "eventType": { "type": "string", "const": "inventory.updated" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "gasTypeId": { "type": "string", "format": "uuid" },
+        "cylinderSize": { "type": "string" },
+        "previousQuantity": { "type": "integer", "minimum": 0 },
+        "newQuantity": { "type": "integer", "minimum": 0 },
+        "changeType": { "type": "string", "enum": ["restock", "sale", "reservation", "adjustment"] },
+        "orderId": { "type": "string", "format": "uuid" },
+        "lowStockAlert": { "type": "boolean" },
+        "reorderLevel": { "type": "integer", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "supplier-service" }
+      },
+      "required": ["eventType", "supplierId", "gasTypeId", "cylinderSize", "newQuantity", "changeType", "timestamp", "service"]
+    },
+
+    "supplier.pricing.updated": {
+      "description": "Supplier pricing changed",
+      "properties": {
+        "eventType": { "type": "string", "const": "pricing.updated" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "gasTypeId": { "type": "string", "format": "uuid" },
+        "cylinderSize": { "type": "string" },
+        "previousPrice": { "type": "number", "minimum": 0 },
+        "newPrice": { "type": "number", "minimum": 0 },
+        "promotionalPrice": { "type": "number", "minimum": 0 },
+        "validFrom": { "type": "string", "format": "date-time" },
+        "validUntil": { "type": "string", "format": "date-time" },
+        "changeReason": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "supplier-service" }
+      },
+      "required": ["eventType", "supplierId", "gasTypeId", "cylinderSize", "newPrice", "timestamp", "service"]
+    },
+
+    "supplier.payment.processed": {
+      "description": "Payment processed for supplier",
+      "properties": {
+        "eventType": { "type": "string", "const": "payment.processed" },
+        "paymentId": { "type": "string", "format": "uuid" },
+        "orderId": { "type": "string", "format": "uuid" },
+        "supplierId": { "type": "string", "format": "uuid" },
+        "payerId": { "type": "string", "format": "uuid" },
+        "amount": { "type": "number", "minimum": 0 },
+        "currency": { "type": "string", "default": "NGN" },
+        "paymentMethod": { 
+          "type": "string", 
+          "enum": ["credit_card", "debit_card", "bank_transfer", "mobile_money", "cash_on_delivery"] 
+        },
+        "status": { 
+          "type": "string", 
+          "enum": ["pending", "processing", "completed", "failed", "refunded", "escrowed"] 
+        },
+        "transactionReference": { "type": "string" },
+        "gatewayReference": { "type": "string" },
+        "escrowReleaseDate": { "type": "string", "format": "date-time" },
+        "platformFee": { "type": "number", "minimum": 0 },
+        "supplierAmount": { "type": "number", "minimum": 0 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "service": { "type": "string", "const": "supplier-service" }
+      },
+      "required": ["eventType", "paymentId", "orderId", "supplierId", "amount", "status", "timestamp", "service"]
+    }
+  },
+
+  "queueBindings": {
+    "auth.user.created": {
+      "exchange": "auth.events",
+      "routingKey": "user.created",
+      "queues": ["orders.user.created", "supplier.user.created"]
+    },
+    "auth.user.verified": {
+      "exchange": "auth.events",
+      "routingKey": "user.verified",
+      "queues": ["orders.user.verified", "supplier.user.verified"]
+    },
+    "auth.supplier.verified": {
+      "exchange": "auth.events",
+      "routingKey": "supplier.verified",
+      "queues": ["orders.supplier.verified", "supplier.supplier.verified"]
+    },
+    "orders.order.created": {
+      "exchange": "orders.events",
+      "routingKey": "order.created",
+      "queues": ["supplier.order.created", "auth.order.created"]
+    },
+    "orders.order.status.changed": {
+      "exchange": "orders.events",
+      "routingKey": "order.status.changed",
+      "queues": ["supplier.order.status.changed", "auth.order.status.changed"]
+    },
+    "orders.delivery.status.changed": {
+      "exchange": "orders.events",
+      "routingKey": "delivery.status.changed",
+      "queues": ["supplier.delivery.status.changed", "auth.delivery.status.changed"]
+    },
+    "orders.emergency.sos": {
+      "exchange": "orders.events",
+      "routingKey": "emergency.sos",
+      "queues": ["supplier.emergency.sos"]
+    },
+    "supplier.inventory.updated": {
+      "exchange": "supplier.events",
+      "routingKey": "inventory.updated",
+      "queues": ["orders.inventory.updated"]
+    },
+    "supplier.pricing.updated": {
+      "exchange": "supplier.events",
+      "routingKey": "pricing.updated",
+      "queues": ["orders.pricing.updated"]
+    },
+    "supplier.payment.processed": {
+      "exchange": "supplier.events",
+      "routingKey": "payment.processed",
+      "queues": ["orders.payment.processed", "auth.payment.processed"]
+    }
+  }
+}

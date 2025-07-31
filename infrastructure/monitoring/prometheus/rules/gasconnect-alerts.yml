@@ -1,0 +1,305 @@
+# GasConnect Alerting Rules
+# Comprehensive alerting for all services and infrastructure
+
+groups:
+  - name: gasconnect.infrastructure
+    rules:
+      # Service availability alerts
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} on {{ $labels.instance }} has been down for more than 1 minute."
+          runbook_url: "https://docs.gasconnect.com/runbooks/service-down"
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 80% for more than 5 minutes on {{ $labels.instance }}."
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 85% for more than 5 minutes on {{ $labels.instance }}."
+
+      # Disk space alerts
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Disk space low on {{ $labels.instance }}"
+          description: "Disk usage is above 80% on {{ $labels.instance }} {{ $labels.mountpoint }}."
+
+      - alert: DiskSpaceCritical
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Disk space critically low on {{ $labels.instance }}"
+          description: "Disk usage is above 90% on {{ $labels.instance }} {{ $labels.mountpoint }}."
+
+  - name: gasconnect.database
+    rules:
+      # PostgreSQL connection alerts
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database is not responding."
+
+      - alert: PostgreSQLTooManyConnections
+        expr: sum(pg_stat_activity_count) > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "PostgreSQL has too many connections"
+          description: "PostgreSQL has {{ $value }} active connections, which is approaching the limit."
+
+      # Database performance alerts
+      - alert: PostgreSQLSlowQueries
+        expr: rate(pg_stat_activity_max_tx_duration[5m]) > 60
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "PostgreSQL has slow queries"
+          description: "PostgreSQL has queries running for more than 60 seconds."
+
+      - alert: PostgreSQLHighReplicationLag
+        expr: pg_replication_lag > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "PostgreSQL replication lag is high"
+          description: "PostgreSQL replication lag is {{ $value }} seconds."
+
+  - name: gasconnect.redis
+    rules:
+      # Redis availability
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: cache
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache server is not responding."
+
+      # Redis memory usage
+      - alert: RedisHighMemoryUsage
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: cache
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis memory usage is above 80%."
+
+      # Redis connection alerts
+      - alert: RedisTooManyConnections
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: cache
+        annotations:
+          summary: "Redis has too many connections"
+          description: "Redis has {{ $value }} connected clients."
+
+  - name: gasconnect.rabbitmq
+    rules:
+      # RabbitMQ availability
+      - alert: RabbitMQDown
+        expr: rabbitmq_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: messaging
+        annotations:
+          summary: "RabbitMQ is down"
+          description: "RabbitMQ message broker is not responding."
+
+      # Queue depth alerts
+      - alert: RabbitMQHighQueueDepth
+        expr: rabbitmq_queue_messages > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: messaging
+        annotations:
+          summary: "RabbitMQ queue depth is high"
+          description: "Queue {{ $labels.queue }} has {{ $value }} messages."
+
+      # Consumer alerts
+      - alert: RabbitMQNoConsumers
+        expr: rabbitmq_queue_consumers == 0 and rabbitmq_queue_messages > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: messaging
+        annotations:
+          summary: "RabbitMQ queue has no consumers"
+          description: "Queue {{ $labels.queue }} has messages but no consumers."
+
+  - name: gasconnect.application
+    rules:
+      # HTTP error rate alerts
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High error rate on {{ $labels.service }}"
+          description: "Error rate is {{ $value }}% on {{ $labels.service }}."
+
+      - alert: CriticalErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 10
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+        annotations:
+          summary: "Critical error rate on {{ $labels.service }}"
+          description: "Error rate is {{ $value }}% on {{ $labels.service }}."
+
+      # Response time alerts
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+        annotations:
+          summary: "High response time on {{ $labels.service }}"
+          description: "95th percentile response time is {{ $value }}s on {{ $labels.service }}."
+
+      # Authentication service specific alerts
+      - alert: HighFailedLoginRate
+        expr: rate(auth_failed_login_attempts_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "High failed login rate"
+          description: "Failed login rate is {{ $value }} per second."
+
+      # Orders service specific alerts
+      - alert: HighOrderFailureRate
+        expr: rate(orders_failed_total[5m]) / rate(orders_total[5m]) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: orders
+        annotations:
+          summary: "High order failure rate"
+          description: "Order failure rate is {{ $value }}%."
+
+      - alert: EmergencyOrdersBacklog
+        expr: emergency_orders_pending > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: orders
+        annotations:
+          summary: "Emergency orders backlog"
+          description: "There are {{ $value }} pending emergency orders."
+
+      # Supplier service specific alerts
+      - alert: LowInventoryAlert
+        expr: supplier_low_stock_items > 10
+        for: 10m
+        labels:
+          severity: warning
+          team: suppliers
+        annotations:
+          summary: "Multiple suppliers have low inventory"
+          description: "{{ $value }} inventory items are below reorder level."
+
+      # Business metrics alerts
+      - alert: LowDailyOrders
+        expr: increase(orders_total[24h]) < 100
+        for: 1h
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: "Low daily order volume"
+          description: "Only {{ $value }} orders in the last 24 hours."
+
+      - alert: HighOrderCancellationRate
+        expr: rate(orders_cancelled_total[1h]) / rate(orders_total[1h]) * 100 > 15
+        for: 30m
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: "High order cancellation rate"
+          description: "Order cancellation rate is {{ $value }}% in the last hour."
+
+  - name: gasconnect.security
+    rules:
+      # Security alerts
+      - alert: SuspiciousLoginActivity
+        expr: rate(auth_failed_login_attempts_total[1m]) > 50
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Suspicious login activity detected"
+          description: "{{ $value }} failed login attempts per second."
+
+      - alert: RateLimitExceeded
+        expr: rate(nginx_http_requests_total{status="429"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Rate limit frequently exceeded"
+          description: "Rate limit exceeded {{ $value }} times per second."
+
+      - alert: UnauthorizedAccessAttempts
+        expr: rate(http_requests_total{status="401"}[5m]) > 20
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "High unauthorized access attempts"
+          description: "{{ $value }} unauthorized access attempts per second."

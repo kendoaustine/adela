@@ -1,0 +1,173 @@
+# Prometheus Configuration for GasConnect
+# Comprehensive monitoring setup for all services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'gasconnect'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 30s
+
+  # Node Exporter for system metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # GasConnect Services
+  - job_name: 'gasconnect-auth-service'
+    static_configs:
+      - targets: ['auth-service:3001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    params:
+      format: ['prometheus']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'auth-service'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'auth-service'
+
+  - job_name: 'gasconnect-orders-service'
+    static_configs:
+      - targets: ['orders-service:3002']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    params:
+      format: ['prometheus']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'orders-service'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'orders-service'
+
+  - job_name: 'gasconnect-supplier-service'
+    static_configs:
+      - targets: ['supplier-service:3003']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    params:
+      format: ['prometheus']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'supplier-service'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'supplier-service'
+
+  # Nginx API Gateway
+  - job_name: 'nginx-gateway'
+    static_configs:
+      - targets: ['nginx:9113']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # PostgreSQL Database
+  - job_name: 'postgresql'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'postgresql'
+
+  # Redis Cache
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis'
+
+  # RabbitMQ Message Broker
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq:15692']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'rabbitmq'
+
+  # Docker containers (if cAdvisor is running)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+    metrics_path: '/metrics'
+
+  # Health checks for all services
+  - job_name: 'gasconnect-health-checks'
+    static_configs:
+      - targets: 
+        - 'auth-service:3001'
+        - 'orders-service:3002'
+        - 'supplier-service:3003'
+    metrics_path: '/health/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Business metrics from services
+  - job_name: 'gasconnect-business-metrics'
+    static_configs:
+      - targets:
+        - 'auth-service:3001'
+        - 'orders-service:3002'
+        - 'supplier-service:3003'
+    metrics_path: '/metrics/business'
+    scrape_interval: 60s
+    scrape_timeout: 15s
+
+# Remote write configuration (for long-term storage)
+remote_write:
+  - url: "http://thanos-receive:19291/api/v1/receive"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus/data
+    retention.time: 30d
+    retention.size: 50GB
+    wal-compression: true
+
+# Web configuration
+web:
+  console.templates: /etc/prometheus/consoles
+  console.libraries: /etc/prometheus/console_libraries
+  enable-lifecycle: true
+  enable-admin-api: true

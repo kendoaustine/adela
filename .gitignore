@@ -1,0 +1,396 @@
+# ===================================
+# GasConnect Platform - .gitignore
+# ===================================
+
+# Node.js Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Grunt intermediate storage
+.grunt
+
+# Bower dependency directory
+bower_components
+
+# node-waf configuration
+.lock-wscript
+
+# Compiled binary addons
+build/Release
+
+# Dependency directories
+jspm_packages/
+
+# Snowpack dependency directory
+web_modules/
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Optional stylelint cache
+.stylelintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variable files
+.env
+.env.development.local
+.env.test.local
+.env.production.local
+.env.local
+
+# parcel-bundler cache
+.cache
+.parcel-cache
+
+# Next.js build output
+.next
+out
+
+# Nuxt.js build / generate output
+.nuxt
+dist
+
+# Gatsby files
+.cache/
+public
+
+# Vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless/
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# ===================================
+# Docker & Container Related
+# ===================================
+
+# Docker override files
+docker-compose.override.yml
+docker-compose.override.yaml
+
+# Docker volumes and data
+volumes/
+data/
+
+# Container logs
+*.log
+
+# ===================================
+# SSL Certificates & Security
+# ===================================
+
+# SSL certificates and private keys
+infrastructure/nginx/ssl/*.key
+infrastructure/nginx/ssl/*.crt
+infrastructure/nginx/ssl/*.pem
+infrastructure/nginx/ssl/*.p12
+infrastructure/nginx/ssl/*.pfx
+*.key
+*.crt
+*.pem
+*.p12
+*.pfx
+
+# JWT secrets and keys
+jwt-*.key
+*.jwt
+
+# ===================================
+# Database & Cache
+# ===================================
+
+# PostgreSQL data
+postgres-data/
+pgdata/
+
+# Redis data
+redis-data/
+
+# Database dumps
+*.sql
+*.dump
+
+# ===================================
+# Testing & Coverage
+# ===================================
+
+# Jest test results
+test-reports/
+test-results/
+junit.xml
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# E2E test artifacts
+cypress/videos/
+cypress/screenshots/
+cypress/downloads/
+
+# Test data and fixtures
+tests/fixtures/generated/
+tests/temp/
+
+# Performance test results
+performance-results/
+
+# ===================================
+# Logs & Monitoring
+# ===================================
+
+# Application logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# PM2 logs
+.pm2/
+
+# Monitoring data
+monitoring-data/
+metrics/
+
+# ===================================
+# IDE & Editor Files
+# ===================================
+
+# VSCode
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+.ionide/
+
+# JetBrains IDEs
+.idea/
+*.swp
+*.swo
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*~
+*.swp
+*.swo
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===================================
+# OS Generated Files
+# ===================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ===================================
+# Temporary & Build Files
+# ===================================
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+.temp/
+
+# Build outputs
+build/
+dist/
+out/
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.so
+
+# ===================================
+# Service-Specific Ignores
+# ===================================
+
+# Auth Service
+services/auth-service/uploads/
+services/auth-service/temp/
+
+# Orders Service
+services/orders-service/uploads/
+services/orders-service/temp/
+
+# Supplier Service
+services/supplier-service/uploads/
+services/supplier-service/temp/
+
+# ===================================
+# Development & Debugging
+# ===================================
+
+# Debug files
+debug/
+*.debug
+
+# Profiling files
+*.prof
+
+# Memory dumps
+*.hprof
+*.heapsnapshot
+
+# ===================================
+# Backup & Archive Files
+# ===================================
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Archive files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# ===================================
+# Documentation Build
+# ===================================
+
+# Generated documentation
+docs/build/
+docs/_build/
+
+# ===================================
+# Miscellaneous
+# ===================================
+
+# Lock files (keep package-lock.json but ignore others)
+yarn.lock
+pnpm-lock.yaml
+
+# Runtime configuration
+.runtime
+
+# Local development overrides
+local.json
+local.js
+
+# Performance monitoring
+.clinic/
+
+# Dependency vulnerability reports
+audit-results.json

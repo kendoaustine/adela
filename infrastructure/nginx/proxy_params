@@ -1,0 +1,39 @@
+# Nginx Proxy Parameters
+# Common proxy settings for all upstream services
+
+proxy_http_version 1.1;
+proxy_cache_bypass $http_upgrade;
+
+# Headers for upstream services
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection 'upgrade';
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host $server_name;
+proxy_set_header X-Forwarded-Port $server_port;
+
+# JWT information headers (if available)
+proxy_set_header X-User-ID $jwt_user_id;
+proxy_set_header X-User-Role $jwt_user_role;
+proxy_set_header X-JWT-Valid $jwt_valid;
+
+# Request ID for tracing
+proxy_set_header X-Request-ID $request_id;
+
+# Timeouts
+proxy_connect_timeout 5s;
+proxy_send_timeout 60s;
+proxy_read_timeout 60s;
+
+# Buffer settings
+proxy_buffering on;
+proxy_buffer_size 4k;
+proxy_buffers 8 4k;
+proxy_busy_buffers_size 8k;
+
+# Retry settings
+proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+proxy_next_upstream_tries 3;
+proxy_next_upstream_timeout 10s;
