@@ -1,9 +1,31 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
-const { asyncHandler } = require('../middleware/errorHandler');
+const { body, query, validationResult } = require('express-validator');
+const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
+const { authenticate, authorize, requestId } = require('../middleware/auth');
 const { cache, invalidateCache } = require('../middleware/cache');
+const InventoryController = require('../controllers/inventoryController');
 
 const router = express.Router();
+
+// Apply authentication and request ID to all routes
+router.use(requestId);
+router.use(authenticate);
+router.use(authorize('supplier')); // Only suppliers can access inventory
+
+// Validation middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const validationErrors = errors.array().map(error => ({
+      field: error.path,
+      message: error.msg,
+      value: error.value,
+    }));
+
+    throw new ValidationError('Validation failed', validationErrors);
+  }
+  next();
+};
 
 /**
  * @swagger
@@ -35,10 +57,27 @@ const router = express.Router();
  *       401:
  *         description: Unauthorized
  */
-router.get('/', cache(300), asyncHandler(async (req, res) => {
-  // TODO: Implement get inventory logic
-  res.json({ message: 'Get inventory - to be implemented' });
-}));
+router.get('/', [
+  query('gasType')
+    .optional()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage('Gas type filter must not be empty'),
+  query('lowStock')
+    .optional()
+    .isBoolean()
+    .withMessage('Low stock filter must be boolean'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('offset')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Offset must be 0 or greater'),
+  handleValidationErrors,
+  cache(300)
+], asyncHandler(InventoryController.getInventory));
 
 /**
  * @swagger
@@ -87,15 +126,9 @@ router.post('/', [
   body('quantityAvailable').isInt({ min: 0 }).withMessage('Quantity must be non-negative'),
   body('reorderLevel').isInt({ min: 1 }).withMessage('Reorder level must be at least 1'),
   body('unitCost').isFloat({ min: 0 }).withMessage('Unit cost must be non-negative'),
-], asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  // TODO: Implement add inventory logic
-  res.status(201).json({ message: 'Add inventory - to be implemented' });
-}));
+  handleValidationErrors,
+  invalidateCache('inventory')
+], asyncHandler(InventoryController.addInventoryItem));
 
 /**
  * @swagger
@@ -134,10 +167,22 @@ router.post('/', [
  *       404:
  *         description: Inventory item not found
  */
-router.put('/:id', asyncHandler(async (req, res) => {
-  // TODO: Implement update inventory logic
-  res.json({ message: 'Update inventory - to be implemented' });
-}));
+router.put('/:id', [
+  body('quantityAvailable')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Quantity must be non-negative'),
+  body('reorderLevel')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Reorder level must be at least 1'),
+  body('unitCost')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Unit cost must be non-negative'),
+  handleValidationErrors,
+  invalidateCache('inventory')
+], asyncHandler(InventoryController.updateInventoryItem));
 
 /**
  * @swagger
@@ -195,9 +240,8 @@ router.post('/:id/restock', [
  *       200:
  *         description: Low stock items retrieved successfully
  */
-router.get('/low-stock', cache(120), asyncHandler(async (req, res) => {
-  // TODO: Implement get low stock logic
-  res.json({ message: 'Get low stock items - to be implemented' });
-}));
+router.get('/low-stock', [
+  cache(120)
+], asyncHandler(InventoryController.getLowStockItems));
 
 module.exports = router;

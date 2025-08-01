@@ -53,7 +53,17 @@ const config = {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
     maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
   },
-  
+
+  // JWT configuration
+  jwt: {
+    secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
+    refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key-change-in-production',
+    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+    issuer: process.env.JWT_ISSUER || 'gasconnect-auth',
+    audience: process.env.JWT_AUDIENCE || 'gasconnect-users',
+  },
+
   // CORS configuration
   cors: {
     origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000'],

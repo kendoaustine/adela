@@ -47,7 +47,7 @@
     "test:e2e:monitoring": "jest tests/e2e/monitoring-integration.test.js --detectOpenHandles --forceExit",
     "test:infrastructure": "jest tests/e2e/infrastructure.test.js --detectOpenHandles --forceExit",
     "test:comprehensive": "./scripts/e2e-test-runner.sh",
-    "test:ssl": "./test-ssl-functionality.sh"
+    "test:ssl": "./scripts/test-ssl-functionality.sh"
   },
   "keywords": [
     "gas-supply",

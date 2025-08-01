@@ -106,8 +106,15 @@ echo "=============================="
 check_service_health "API Gateway (HTTPS)" "$BASE_URL/health" "200"
 check_service_health "API Gateway (HTTP->HTTPS Redirect)" "$HTTP_URL/health" "301"
 
-# Check if we can reach the auth service through the gateway
-check_service_health "Auth Service via Gateway" "$BASE_URL/api/v1/auth/login" "400"
+# Check if we can reach the auth service through the gateway (POST request for login)
+echo -e "${BLUE}Checking Auth Service via Gateway...${NC}"
+auth_response_code=$(curl -k -s -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{"identifier":"test","password":"test"}' "$BASE_URL/api/v1/auth/login" 2>/dev/null || echo "000")
+if [ "$auth_response_code" = "401" ] || [ "$auth_response_code" = "400" ]; then
+    echo -e "${GREEN}✅ Auth Service via Gateway is accessible (HTTP ${auth_response_code})${NC}"
+else
+    echo -e "${RED}❌ Auth Service via Gateway is not accessible (HTTP ${auth_response_code})${NC}"
+    exit 1
+fi
 
 # Check if monitoring services are available (optional)
 if [ "$MONITORING_ENABLED" = "true" ]; then

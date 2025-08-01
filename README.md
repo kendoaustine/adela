@@ -39,10 +39,20 @@ docker-compose exec supplier-service npm run migrate
 docker-compose logs -f
 ```
 
-## API Documentation
+## Documentation
+
+### API Documentation
 - Auth Service: http://localhost:3001/api/docs
 - Orders Service: http://localhost:3002/api/docs
 - Supplier Service: http://localhost:3003/api/docs
+
+### Project Documentation
+- **[Documentation Index](docs/INDEX.md)** - Complete documentation overview
+- **[API Reference](docs/API.md)** - Detailed API documentation
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment
+- **[Infrastructure Setup](docs/infrastructure/)** - Infrastructure documentation
+- **[Performance Analysis](docs/performance/)** - Performance optimization
+- **[Testing Guide](docs/testing/)** - Testing documentation
 
 ## Development
 

@@ -346,4 +346,48 @@ router.post('/reset-password', [
   auditLog('reset_password'),
 ], asyncHandler(AuthController.resetPassword));
 
+/**
+ * @swagger
+ * /api/v1/auth/validate:
+ *   get:
+ *     summary: Validate JWT token and return user info
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token is valid
+ *       401:
+ *         description: Invalid or expired token
+ */
+router.get('/validate', [
+  authenticate,
+  auditLog('validate_token'),
+], asyncHandler(async (req, res) => {
+  // If we reach here, the token is valid (authenticate middleware passed)
+  const user = req.user;
+  const token = req.token;
+
+  res.json({
+    message: 'Token is valid',
+    user: {
+      id: user.id,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      isVerified: user.isVerified,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    },
+    token: {
+      jti: token.jti,
+      iat: token.iat,
+      exp: token.exp,
+      iss: token.iss,
+      aud: token.aud
+    }
+  });
+}));
+
 module.exports = router;

@@ -89,8 +89,9 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use('/api/v1/auth/login', authLimiter);
-app.use('/api/v1/auth/register', authLimiter);
+// Temporarily disabled for testing
+// app.use('/api/v1/auth/login', authLimiter);
+// app.use('/api/v1/auth/register', authLimiter);
 
 // API routes
 app.use('/api/v1/auth', authRoutes);

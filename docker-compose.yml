@@ -72,6 +72,8 @@ services:
       RABBITMQ_URL: amqp://gasconnect:gasconnect_password@rabbitmq:5672
       JWT_SECRET: your-super-secret-jwt-key-change-in-production
       JWT_REFRESH_SECRET: your-super-secret-refresh-key-change-in-production
+      RATE_LIMIT_WINDOW_MS: 60000
+      RATE_LIMIT_MAX_REQUESTS: 1000
     ports:
       - "3001:3001"
     depends_on:

@@ -1,9 +1,30 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
-const Order = require('../models/Order');
-const { asyncHandler } = require('../middleware/errorHandler');
+const { body, query, validationResult } = require('express-validator');
+const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
+const { authenticate, authorize, requestId } = require('../middleware/auth');
+const { cache, invalidateCache } = require('../middleware/cache');
+const OrdersController = require('../controllers/ordersController');
 
 const router = express.Router();
+
+// Apply authentication and request ID to all routes
+router.use(requestId);
+router.use(authenticate);
+
+// Validation middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const validationErrors = errors.array().map(error => ({
+      field: error.path,
+      message: error.msg,
+      value: error.value,
+    }));
+
+    throw new ValidationError('Validation failed', validationErrors);
+  }
+  next();
+};
 
 /**
  * @swagger
@@ -59,22 +80,33 @@ const router = express.Router();
  *         description: Unauthorized
  */
 router.post('/', [
-  // TODO: Add authentication middleware
+  authorize(['household', 'supplier']), // Both households and suppliers can create orders
   body('supplierId').isUUID().withMessage('Valid supplier ID is required'),
   body('deliveryAddressId').isUUID().withMessage('Valid delivery address ID is required'),
+  body('orderType')
+    .optional()
+    .isIn(['regular', 'emergency_sos', 'recurring'])
+    .withMessage('Invalid order type'),
   body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
   body('items.*.gasTypeId').isUUID().withMessage('Valid gas type ID is required'),
+  body('items.*.cylinderSize').trim().notEmpty().withMessage('Cylinder size is required'),
   body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
-  body('items.*.unitPrice').isFloat({ min: 0 }).withMessage('Unit price must be non-negative'),
-], asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  // TODO: Implement order creation logic
-  res.status(201).json({ message: 'Order creation - to be implemented' });
-}));
+  body('specialInstructions')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Special instructions must be 500 characters or less'),
+  body('emergencyContactPhone')
+    .optional()
+    .isMobilePhone()
+    .withMessage('Valid emergency contact phone is required'),
+  body('scheduledDeliveryDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Valid scheduled delivery date is required'),
+  handleValidationErrors,
+  invalidateCache('orders')
+], asyncHandler(OrdersController.createOrder));
 
 /**
  * @swagger
@@ -107,10 +139,27 @@ router.post('/', [
  *       200:
  *         description: Orders retrieved successfully
  */
-router.get('/', asyncHandler(async (req, res) => {
-  // TODO: Implement get orders logic
-  res.json({ message: 'Get orders - to be implemented' });
-}));
+router.get('/', [
+  authorize(['household', 'supplier', 'delivery_driver']),
+  query('status')
+    .optional()
+    .isIn(['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'])
+    .withMessage('Invalid status filter'),
+  query('orderType')
+    .optional()
+    .isIn(['regular', 'emergency_sos', 'recurring'])
+    .withMessage('Invalid order type filter'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('offset')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Offset must be 0 or greater'),
+  handleValidationErrors,
+  cache(300) // Cache for 5 minutes
+], asyncHandler(OrdersController.getUserOrders));
 
 /**
  * @swagger
@@ -133,10 +182,10 @@ router.get('/', asyncHandler(async (req, res) => {
  *       404:
  *         description: Order not found
  */
-router.get('/:id', asyncHandler(async (req, res) => {
-  // TODO: Implement get order by ID logic
-  res.json({ message: 'Get order by ID - to be implemented' });
-}));
+router.get('/:id', [
+  authorize(['household', 'supplier', 'delivery_driver']),
+  cache(180) // Cache for 3 minutes
+], asyncHandler(OrdersController.getOrderById));
 
 /**
  * @swagger
@@ -174,10 +223,10 @@ router.get('/:id', asyncHandler(async (req, res) => {
  *         description: Order not found
  */
 router.post('/:id/cancel', [
+  authorize(['household', 'supplier']), // Only order creators can cancel
   body('reason').trim().isLength({ min: 1, max: 500 }).withMessage('Cancellation reason is required'),
-], asyncHandler(async (req, res) => {
-  // TODO: Implement order cancellation logic
-  res.json({ message: 'Order cancellation - to be implemented' });
-}));
+  handleValidationErrors,
+  invalidateCache('orders')
+], asyncHandler(OrdersController.cancelOrder));
 
 module.exports = router;

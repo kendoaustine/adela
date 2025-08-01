@@ -1,60 +1,61 @@
-const JWTService = require('../services/jwt');
-const User = require('../models/User');
-const { sessionService } = require('../services/redis');
+const AuthServiceClient = require('../lib/service-clients/authServiceClient');
 const logger = require('../utils/logger');
 const { AuthenticationError, AuthorizationError } = require('./errorHandler');
 
+// Initialize Auth Service client
+const authServiceClient = new AuthServiceClient();
+
 /**
- * Authentication middleware - verifies JWT token
+ * Authentication middleware - verifies JWT token via auth service
  */
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    const token = JWTService.extractTokenFromHeader(authHeader);
 
-    if (!token) {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new AuthenticationError('Access token required');
     }
 
-    // Verify token
-    const decoded = JWTService.verifyAccessToken(token);
-    
-    // Check if user exists and is active
-    const user = await User.findById(decoded.sub);
-    if (!user) {
-      throw new AuthenticationError('User not found');
+    const token = authHeader.substring(7);
+
+    // Validate token via Auth Service client
+    try {
+      const result = await authServiceClient.validateToken(token);
+
+      if (!result.isValid) {
+        throw new AuthenticationError(result.error || 'Invalid token');
+      }
+
+      // Attach user and token data to request
+      req.user = result.user;
+      req.token = result.token;
+
+      logger.debug('User authenticated via auth service', {
+        userId: result.user.id,
+        role: result.user.role,
+        service: 'supplier'
+      });
+
+      next();
+    } catch (error) {
+      if (error instanceof AuthenticationError || error instanceof AuthorizationError) {
+        throw error;
+      } else {
+        logger.error('Auth service communication failed:', { error: error.message });
+        throw new AuthenticationError('Authentication service unavailable');
+      }
     }
-
-    if (!user.isActive) {
-      throw new AuthenticationError('Account is deactivated');
-    }
-
-    if (user.isLocked()) {
-      throw new AuthenticationError('Account is temporarily locked');
-    }
-
-    // Check session in Redis (optional additional security)
-    const session = await sessionService.getSession(user.id);
-    if (session && session.tokenId !== decoded.jti) {
-      throw new AuthenticationError('Invalid session');
-    }
-
-    // Attach user to request
-    req.user = user;
-    req.token = decoded;
-
-    logger.debug('User authenticated', { 
-      userId: user.id, 
-      role: user.role,
-      tokenId: decoded.jti 
+  } catch (error) {
+    logger.error('Authentication failed:', {
+      error: error.message,
+      path: req.path,
+      method: req.method
     });
 
-    next();
-  } catch (error) {
-    if (error.name && error.name.includes('JWT')) {
-      next(new AuthenticationError('Invalid or expired token'));
-    } else {
+    if (error instanceof AuthenticationError || error instanceof AuthorizationError) {
       next(error);
+    } else {
+      next(new AuthenticationError('Invalid or expired token'));
     }
   }
 };
