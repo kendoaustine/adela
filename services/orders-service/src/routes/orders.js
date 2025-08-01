@@ -26,6 +26,12 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
+// Test inter-service communication
+router.get('/test-communication', [
+  authorize(['household', 'supplier', 'delivery_driver']),
+  cache(60) // Cache for 1 minute
+], asyncHandler(OrdersController.testInterServiceCommunication));
+
 /**
  * @swagger
  * /api/v1/orders:

@@ -14,7 +14,6 @@ const logger = require('./utils/logger');
 const { connectDatabase } = require('./database/connection');
 const { connectRedis } = require('./services/redis');
 const { connectRabbitMQ } = require('./services/rabbitmq');
-const serviceManager = require('./services/serviceManager');
 const { errorHandler } = require('./middleware/errorHandler');
 const { setupSwagger } = require('./utils/swagger');
 const { setupWebSocket } = require('./services/websocket');
@@ -149,8 +148,8 @@ const gracefulShutdown = async (signal) => {
     logger.info('WebSocket server closed.');
   });
   
-  // Close service manager and other connections
-  await serviceManager.shutdown();
+  // Close database connections, Redis, RabbitMQ, etc.
+  // These will be implemented in their respective modules
   
   process.exit(0);
 };
@@ -166,9 +165,6 @@ const startServer = async () => {
     await connectDatabase();
     await connectRedis();
     await connectRabbitMQ();
-
-    // Initialize service manager for inter-service communication
-    await serviceManager.initialize();
     
     server.listen(config.port, () => {
       logger.info(`Orders Service running on port ${config.port}`);

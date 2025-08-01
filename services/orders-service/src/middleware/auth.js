@@ -1,6 +1,9 @@
-const serviceManager = require('../services/serviceManager');
+const AuthServiceClient = require('../lib/service-clients/authServiceClient');
 const logger = require('../utils/logger');
 const { AuthenticationError, AuthorizationError } = require('./errorHandler');
+
+// Initialize Auth Service client
+const authServiceClient = new AuthServiceClient();
 
 /**
  * Authentication middleware - validates JWT token via Auth Service
@@ -15,8 +18,14 @@ const authenticate = async (req, res, next) => {
 
     const token = authHeader.substring(7);
 
-    // Validate token via Auth Service
-    const { user, token: tokenData } = await serviceManager.validateUserToken(token);
+    // Validate token via Auth Service client
+    const result = await authServiceClient.validateToken(token);
+
+    if (!result.isValid) {
+      throw new AuthenticationError(result.error || 'Invalid token');
+    }
+
+    const { user, token: tokenData } = result;
 
     // Attach user and token data to request
     req.user = user;

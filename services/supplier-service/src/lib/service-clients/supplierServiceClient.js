@@ -1,4 +1,4 @@
-const ServiceHttpClient = require('../http-client');
+const ServiceHttpClient = require('../http-client/index');
 
 /**
  * Supplier Service Client

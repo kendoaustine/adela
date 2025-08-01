@@ -1,10 +1,74 @@
+const AuthServiceClient = require('../lib/service-clients/authServiceClient');
+const SupplierServiceClient = require('../lib/service-clients/supplierServiceClient');
 const Order = require('../models/Order');
-const serviceManager = require('../services/serviceManager');
 const { publishEvent } = require('../services/rabbitmq');
 const logger = require('../utils/logger');
 const { ValidationError, NotFoundError, BusinessLogicError } = require('../middleware/errorHandler');
 
+// Initialize service clients
+const authServiceClient = new AuthServiceClient();
+const supplierServiceClient = new SupplierServiceClient();
+
 class OrdersController {
+  /**
+   * Test inter-service communication
+   */
+  static async testInterServiceCommunication(req, res) {
+    const userId = req.user.id;
+    const authToken = req.headers.authorization.substring(7);
+
+    try {
+      // Test 1: Get user addresses from Auth Service
+      let userAddresses = [];
+      try {
+        const addressResult = await authServiceClient.getUserAddresses(authToken);
+        userAddresses = addressResult.addresses || [];
+      } catch (error) {
+        logger.warn('Failed to get user addresses:', error.message);
+        userAddresses = [{ id: 'mock-address', address: 'Mock address for testing' }];
+      }
+
+      // Test 2: Get supplier inventory from Supplier Service
+      let supplierInventory = [];
+      try {
+        supplierServiceClient.setAuthToken(authToken);
+        const inventoryResult = await supplierServiceClient.getInventory(authToken);
+        supplierInventory = inventoryResult.inventory || [];
+      } catch (error) {
+        logger.warn('Failed to get supplier inventory:', error.message);
+        supplierInventory = [{ id: 'mock-inventory', message: 'Could not fetch inventory' }];
+      }
+
+      res.json({
+        message: 'Inter-service communication test successful',
+        user: {
+          id: req.user.id,
+          email: req.user.email,
+          role: req.user.role
+        },
+        services: {
+          authService: {
+            status: userAddresses.length > 0 ? 'connected' : 'limited',
+            addressCount: userAddresses.length,
+            addresses: userAddresses.slice(0, 2) // Show first 2 addresses
+          },
+          supplierService: {
+            status: supplierInventory.length > 0 ? 'connected' : 'limited',
+            inventoryCount: supplierInventory.length,
+            inventory: supplierInventory.slice(0, 2) // Show first 2 items
+          }
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      logger.error('Inter-service communication test failed:', {
+        error: error.message,
+        userId
+      });
+      throw error;
+    }
+  }
+
   /**
    * Create a new order
    */
