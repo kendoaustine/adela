@@ -5,7 +5,7 @@ const { authenticate, authorize, requestId } = require('../middleware/auth');
 const { cache, invalidateCache } = require('../middleware/cache');
 const InventoryController = require('../controllers/inventoryController');
 const reorderAlertService = require('../services/reorderAlerts');
-const { query } = require('../database/connection');
+const { query: dbQuery } = require('../database/connection');
 const logger = require('../utils/logger');
 
 const router = express.Router();
@@ -460,7 +460,7 @@ router.get('/metrics', [
   try {
     const supplierId = req.user.id;
 
-    const metricsResult = await query(
+    const metricsResult = await dbQuery(
       'SELECT * FROM calculate_inventory_metrics($1)',
       [supplierId]
     );

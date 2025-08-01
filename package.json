@@ -17,7 +17,7 @@
     "logs:orders": "docker-compose logs -f orders-service",
     "logs:supplier": "docker-compose logs -f supplier-service",
     "logs:nginx": "docker-compose logs -f nginx",
-    "test": "npm run test:auth && npm run test:orders && npm run test:supplier",
+    "test": "jest",
     "test:auth": "cd services/auth-service && npm test",
     "test:orders": "cd services/orders-service && npm test",
     "test:supplier": "cd services/supplier-service && npm test",
@@ -39,7 +39,6 @@
     "format:supplier": "cd services/supplier-service && npm run format",
     "health": "curl -f http://localhost/health && curl -f http://localhost:3001/health && curl -f http://localhost:3002/health && curl -f http://localhost:3003/health",
     "setup": "cp .env.example .env && npm run build && npm run migrate && npm run seed",
-    "test": "jest",
     "test:e2e": "jest tests/e2e --runInBand --detectOpenHandles --forceExit",
     "test:e2e:household": "jest tests/e2e/household-user-journey.test.js --detectOpenHandles --forceExit",
     "test:e2e:supplier": "jest tests/e2e/supplier-user-journey.test.js --detectOpenHandles --forceExit",
@@ -65,13 +64,24 @@
   "author": "GasConnect Team",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2",
-    "nodemon": "^3.0.1",
-    "jest": "^29.7.0",
-    "supertest": "^6.3.3",
-    "axios": "^1.6.0",
+    "@playwright/test": "^1.54.2",
+    "@testing-library/jest-dom": "^6.6.4",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/jest": "^29.5.8",
-    "jest-environment-node": "^29.7.0"
+    "autoprefixer": "^10.4.21",
+    "axios": "^1.11.0",
+    "concurrently": "^8.2.2",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "lint-staged": "^16.1.2",
+    "nodemon": "^3.0.1",
+    "postcss": "^8.5.6",
+    "prettier": "^3.6.2",
+    "supertest": "^6.3.3",
+    "tailwindcss": "^4.1.11"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -84,5 +94,14 @@
   "bugs": {
     "url": "https://github.com/gasconnect/backend/issues"
   },
-  "homepage": "https://github.com/gasconnect/backend#readme"
+  "homepage": "https://github.com/gasconnect/backend#readme",
+  "dependencies": {
+    "@headlessui/react": "^2.2.7",
+    "@tanstack/react-query": "^5.84.1",
+    "date-fns": "^4.1.0",
+    "framer-motion": "^12.23.12",
+    "react-router-dom": "^7.7.1",
+    "socket.io-client": "^4.8.1",
+    "zustand": "^5.0.7"
+  }
 }
