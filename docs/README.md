@@ -262,7 +262,9 @@ Key environment variables for each service:
 - `DATABASE_URL`: PostgreSQL connection string
 - `REDIS_URL`: Redis connection string
 - `RABBITMQ_URL`: RabbitMQ connection string
-- `STRIPE_SECRET_KEY`: Stripe payment secret key
+- `PAYSTACK_SECRET_KEY`: Paystack payment secret key
+- `PAYSTACK_PUBLIC_KEY`: Paystack public key
+- `PAYSTACK_WEBHOOK_SECRET`: Paystack webhook secret
 
 ## 🤝 Contributing
 

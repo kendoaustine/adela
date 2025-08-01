@@ -1,7 +1,31 @@
 const express = require('express');
-const { asyncHandler } = require('../middleware/errorHandler');
+const { query, validationResult } = require('express-validator');
+const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
+const { authenticate, authorize, requestId } = require('../middleware/auth');
+const { cache } = require('../middleware/cache');
+const AnalyticsController = require('../controllers/analyticsController');
 
 const router = express.Router();
+
+// Apply authentication and request ID to all routes
+router.use(requestId);
+router.use(authenticate);
+router.use(authorize('supplier')); // Only suppliers can access analytics
+
+// Validation middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const validationErrors = errors.array().map(error => ({
+      field: error.path,
+      message: error.msg,
+      value: error.value,
+    }));
+
+    throw new ValidationError('Validation failed', validationErrors);
+  }
+  next();
+};
 
 /**
  * @swagger
@@ -32,10 +56,14 @@ const router = express.Router();
  *       200:
  *         description: Dashboard analytics retrieved successfully
  */
-router.get('/dashboard', asyncHandler(async (req, res) => {
-  // TODO: Implement dashboard analytics logic
-  res.json({ message: 'Dashboard analytics - to be implemented' });
-}));
+router.get('/dashboard', [
+  query('period')
+    .optional()
+    .isIn(['7d', '30d', '90d', '1y'])
+    .withMessage('Invalid period. Must be one of: 7d, 30d, 90d, 1y'),
+  handleValidationErrors,
+  cache(300) // Cache for 5 minutes
+], asyncHandler(AnalyticsController.getDashboardOverview));
 
 /**
  * @swagger
@@ -56,67 +84,17 @@ router.get('/dashboard', asyncHandler(async (req, res) => {
  *       200:
  *         description: Sales analytics retrieved successfully
  */
-router.get('/sales', asyncHandler(async (req, res) => {
-  // TODO: Implement sales analytics logic
-  res.json({ message: 'Sales analytics - to be implemented' });
-}));
+router.get('/sales', [
+  query('period')
+    .optional()
+    .isIn(['7d', '30d', '90d', '1y'])
+    .withMessage('Invalid period. Must be one of: 7d, 30d, 90d, 1y'),
+  handleValidationErrors,
+  cache(300) // Cache for 5 minutes
+], asyncHandler(AnalyticsController.getSalesAnalytics));
 
-/**
- * @swagger
- * /api/v1/analytics/inventory:
- *   get:
- *     summary: Get inventory analytics
- *     tags: [Analytics]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Inventory analytics retrieved successfully
- */
-router.get('/inventory', asyncHandler(async (req, res) => {
-  // TODO: Implement inventory analytics logic
-  res.json({ message: 'Inventory analytics - to be implemented' });
-}));
-
-/**
- * @swagger
- * /api/v1/analytics/revenue:
- *   get:
- *     summary: Get revenue analytics
- *     tags: [Analytics]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: period
- *         schema:
- *           type: string
- *           enum: [daily, weekly, monthly, yearly]
- *           default: monthly
- *     responses:
- *       200:
- *         description: Revenue analytics retrieved successfully
- */
-router.get('/revenue', asyncHandler(async (req, res) => {
-  // TODO: Implement revenue analytics logic
-  res.json({ message: 'Revenue analytics - to be implemented' });
-}));
-
-/**
- * @swagger
- * /api/v1/analytics/customers:
- *   get:
- *     summary: Get customer analytics
- *     tags: [Analytics]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Customer analytics retrieved successfully
- */
-router.get('/customers', asyncHandler(async (req, res) => {
-  // TODO: Implement customer analytics logic
-  res.json({ message: 'Customer analytics - to be implemented' });
-}));
+router.get('/inventory', [
+  cache(600) // Cache for 10 minutes
+], asyncHandler(AnalyticsController.getInventoryAnalytics));
 
 module.exports = router;

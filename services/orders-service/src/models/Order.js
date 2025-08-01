@@ -322,7 +322,7 @@ class Order {
       const result = await query(
         `SELECT oi.*, gt.name as gas_type_name, gt.category as gas_category
          FROM orders.order_items oi
-         JOIN orders.gas_types gt ON oi.gas_type_id = gt.id
+         JOIN supplier.gas_types gt ON oi.gas_type_id = gt.id
          WHERE oi.order_id = $1
          ORDER BY oi.created_at`,
         [this.id]

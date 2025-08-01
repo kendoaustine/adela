@@ -3,7 +3,7 @@ const { body, query, validationResult } = require('express-validator');
 const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
 const { authenticate, authorize, requestId } = require('../middleware/auth');
 const { cache, invalidateCache } = require('../middleware/cache');
-const OrdersController = require('../controllers/ordersController');
+const OrderController = require('../controllers/orderController');
 
 const router = express.Router();
 
@@ -30,7 +30,7 @@ const handleValidationErrors = (req, res, next) => {
 router.get('/test-communication', [
   authorize(['household', 'supplier', 'delivery_driver']),
   cache(60) // Cache for 1 minute
-], asyncHandler(OrdersController.testInterServiceCommunication));
+], asyncHandler(OrderController.testInterServiceCommunication));
 
 /**
  * @swagger
@@ -112,7 +112,7 @@ router.post('/', [
     .withMessage('Valid scheduled delivery date is required'),
   handleValidationErrors,
   invalidateCache('orders')
-], asyncHandler(OrdersController.createOrder));
+], asyncHandler(OrderController.createOrder));
 
 /**
  * @swagger
@@ -165,7 +165,7 @@ router.get('/', [
     .withMessage('Offset must be 0 or greater'),
   handleValidationErrors,
   cache(300) // Cache for 5 minutes
-], asyncHandler(OrdersController.getUserOrders));
+], asyncHandler(OrderController.getUserOrders));
 
 /**
  * @swagger
@@ -191,7 +191,7 @@ router.get('/', [
 router.get('/:id', [
   authorize(['household', 'supplier', 'delivery_driver']),
   cache(180) // Cache for 3 minutes
-], asyncHandler(OrdersController.getOrderById));
+], asyncHandler(OrderController.getOrderById));
 
 /**
  * @swagger
@@ -233,6 +233,54 @@ router.post('/:id/cancel', [
   body('reason').trim().isLength({ min: 1, max: 500 }).withMessage('Cancellation reason is required'),
   handleValidationErrors,
   invalidateCache('orders')
-], asyncHandler(OrdersController.cancelOrder));
+], asyncHandler(OrderController.cancelOrder));
+
+/**
+ * @swagger
+ * /api/v1/orders/{id}/status:
+ *   put:
+ *     summary: Update order status
+ *     tags: [Orders]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - status
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [pending, confirmed, preparing, out_for_delivery, delivered, cancelled]
+ *               notes:
+ *                 type: string
+ *                 maxLength: 500
+ *     responses:
+ *       200:
+ *         description: Order status updated successfully
+ */
+router.put('/:id/status', [
+  authorize(['household', 'supplier', 'delivery_driver']),
+  body('status')
+    .isIn(['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'])
+    .withMessage('Invalid order status'),
+  body('notes')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Notes cannot exceed 500 characters'),
+  handleValidationErrors,
+  invalidateCache('orders')
+], asyncHandler(OrderController.updateOrderStatus));
 
 module.exports = router;

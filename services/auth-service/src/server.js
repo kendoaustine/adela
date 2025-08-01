@@ -22,6 +22,7 @@ const profileRoutes = require('./routes/profiles');
 const addressRoutes = require('./routes/addresses');
 const supplierRoutes = require('./routes/suppliers');
 const healthRoutes = require('./routes/health');
+const testRoutes = require('./routes/test');
 
 const app = express();
 
@@ -99,7 +100,9 @@ app.use('/api/v1/users', userRoutes);
 app.use('/api/v1/profiles', profileRoutes);
 app.use('/api/v1/addresses', addressRoutes);
 app.use('/api/v1/suppliers', supplierRoutes);
+app.use('/api/v1/test', testRoutes);
 app.use('/health', healthRoutes);
+app.use('/api/v1/health', healthRoutes);
 
 // Setup Swagger documentation
 setupSwagger(app);
@@ -112,6 +115,7 @@ app.get('/', (req, res) => {
     status: 'running',
     endpoints: {
       health: '/health',
+      healthApi: '/api/v1/health',
       docs: '/api/docs',
       auth: '/api/v1/auth',
       users: '/api/v1/users',

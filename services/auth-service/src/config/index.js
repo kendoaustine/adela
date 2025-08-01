@@ -50,12 +50,14 @@ const config = {
   
   // JWT configuration
   jwt: {
-    secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
-    refreshSecret: process.env.JWT_REFRESH_SECRET || 'your-super-secret-refresh-key-change-in-production',
-    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+    secret: process.env.JWT_SECRET,
+    refreshSecret: process.env.JWT_REFRESH_SECRET,
+    expiresIn: process.env.JWT_EXPIRES_IN || '1h',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
-    issuer: 'gasconnect-auth',
-    audience: 'gasconnect-users',
+    issuer: process.env.JWT_ISSUER || 'gasconnect-auth',
+    audience: process.env.JWT_AUDIENCE || 'gasconnect-users',
+    algorithm: 'HS256',
+    clockTolerance: 30,
   },
   
   // Password hashing configuration
@@ -123,6 +125,10 @@ const config = {
     lockoutDuration: 30 * 60 * 1000, // 30 minutes
     otpLength: 6,
     otpExpiry: 10 * 60 * 1000, // 10 minutes
+    sessionSecret: process.env.SESSION_SECRET,
+    encryptionKey: process.env.ENCRYPTION_KEY,
+    enable2FA: process.env.ENABLE_2FA === 'true',
+    enableAuditLogging: process.env.ENABLE_AUDIT_LOGGING !== 'false',
   },
   
   // Logging configuration
@@ -159,15 +165,52 @@ const config = {
 const requiredEnvVars = [
   'JWT_SECRET',
   'JWT_REFRESH_SECRET',
+  'SESSION_SECRET',
+  'ENCRYPTION_KEY',
 ];
 
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
-  console.error('Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
   if (process.env.NODE_ENV === 'production') {
+    console.error('🚨 Cannot start in production without required environment variables');
     process.exit(1);
+  } else {
+    console.warn('⚠️  Using default values for missing environment variables in development');
   }
 }
+
+// Validate JWT secret strength
+const validateSecretStrength = (name, secret) => {
+  if (!secret) return;
+
+  if (secret.length < 32) {
+    const message = `${name} should be at least 32 characters long`;
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`🚨 ${message}`);
+      process.exit(1);
+    } else {
+      console.warn(`⚠️  ${message}`);
+    }
+  }
+
+  const weakPatterns = ['your-super-secret', 'change-in-production', 'secret', 'password'];
+  const isWeak = weakPatterns.some(pattern => secret.toLowerCase().includes(pattern));
+
+  if (isWeak) {
+    const message = `${name} appears to be a weak or default secret`;
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`🚨 ${message}`);
+      process.exit(1);
+    } else {
+      console.warn(`⚠️  ${message}`);
+    }
+  }
+};
+
+validateSecretStrength('JWT_SECRET', process.env.JWT_SECRET);
+validateSecretStrength('JWT_REFRESH_SECRET', process.env.JWT_REFRESH_SECRET);
+validateSecretStrength('SESSION_SECRET', process.env.SESSION_SECRET);
 
 module.exports = config;

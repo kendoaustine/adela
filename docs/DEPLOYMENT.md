@@ -399,8 +399,9 @@ gcloud run deploy supplier-service \
 - `SUPPLIER_SERVICE_URL` - Supplier service URL
 
 **Supplier Service specific:**
-- `STRIPE_SECRET_KEY` - Stripe payment secret key
-- `STRIPE_WEBHOOK_SECRET` - Stripe webhook secret
+- `PAYSTACK_SECRET_KEY` - Paystack payment secret key
+- `PAYSTACK_PUBLIC_KEY` - Paystack public key
+- `PAYSTACK_WEBHOOK_SECRET` - Paystack webhook secret
 
 ### Secrets Management
 

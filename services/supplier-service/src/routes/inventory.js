@@ -4,6 +4,9 @@ const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
 const { authenticate, authorize, requestId } = require('../middleware/auth');
 const { cache, invalidateCache } = require('../middleware/cache');
 const InventoryController = require('../controllers/inventoryController');
+const reorderAlertService = require('../services/reorderAlerts');
+const { query } = require('../database/connection');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -223,10 +226,10 @@ router.put('/:id', [
 router.post('/:id/restock', [
   body('quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
   body('notes').optional().trim().isLength({ max: 500 }).withMessage('Notes must be less than 500 characters'),
-], asyncHandler(async (req, res) => {
-  // TODO: Implement restock logic
-  res.json({ message: 'Restock inventory - to be implemented' });
-}));
+  body('unitCost').optional().isFloat({ min: 0 }).withMessage('Unit cost must be non-negative'),
+  handleValidationErrors,
+  invalidateCache('inventory')
+], asyncHandler(InventoryController.restockInventory));
 
 /**
  * @swagger
@@ -243,5 +246,246 @@ router.post('/:id/restock', [
 router.get('/low-stock', [
   cache(120)
 ], asyncHandler(InventoryController.getLowStockItems));
+
+/**
+ * @swagger
+ * /api/v1/inventory/available:
+ *   get:
+ *     summary: Get available suppliers for specific inventory requirements
+ *     tags: [Inventory]
+ *     parameters:
+ *       - in: query
+ *         name: gasTypeId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *       - in: query
+ *         name: cylinderSize
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: minQuantity
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *       - in: query
+ *         name: latitude
+ *         schema:
+ *           type: number
+ *       - in: query
+ *         name: longitude
+ *         schema:
+ *           type: number
+ *       - in: query
+ *         name: maxDistance
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 200
+ *           default: 50
+ *     responses:
+ *       200:
+ *         description: Available suppliers retrieved successfully
+ */
+router.get('/available', [
+  query('gasTypeId')
+    .isUUID()
+    .withMessage('Valid gas type ID is required'),
+  query('cylinderSize')
+    .trim()
+    .notEmpty()
+    .withMessage('Cylinder size is required'),
+  query('minQuantity')
+    .isInt({ min: 1 })
+    .withMessage('Minimum quantity must be at least 1'),
+  query('latitude')
+    .optional()
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude must be between -90 and 90'),
+  query('longitude')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude must be between -180 and 180'),
+  query('maxDistance')
+    .optional()
+    .isInt({ min: 1, max: 200 })
+    .withMessage('Max distance must be between 1 and 200 km'),
+  handleValidationErrors,
+  cache(120) // Cache for 2 minutes (inventory changes frequently)
+], asyncHandler(InventoryController.getAvailableSuppliers));
+
+/**
+ * @swagger
+ * /api/v1/inventory/reserve:
+ *   post:
+ *     summary: Reserve inventory for an order
+ *     tags: [Inventory]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - orderId
+ *               - items
+ *             properties:
+ *               orderId:
+ *                 type: string
+ *                 format: uuid
+ *               items:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     supplierId:
+ *                       type: string
+ *                       format: uuid
+ *                     gasTypeId:
+ *                       type: string
+ *                       format: uuid
+ *                     cylinderSize:
+ *                       type: string
+ *                     quantity:
+ *                       type: integer
+ *                       minimum: 1
+ *               reservationDuration:
+ *                 type: integer
+ *                 minimum: 5
+ *                 maximum: 120
+ *                 default: 30
+ *     responses:
+ *       200:
+ *         description: Inventory reserved successfully
+ *       400:
+ *         description: Insufficient inventory or validation error
+ */
+router.post('/reserve', [
+  body('orderId').isUUID().withMessage('Valid order ID is required'),
+  body('items').isArray({ min: 1 }).withMessage('At least one item is required'),
+  body('items.*.supplierId').isUUID().withMessage('Valid supplier ID is required'),
+  body('items.*.gasTypeId').isUUID().withMessage('Valid gas type ID is required'),
+  body('items.*.cylinderSize').trim().notEmpty().withMessage('Cylinder size is required'),
+  body('items.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
+  body('reservationDuration').optional().isInt({ min: 5, max: 120 }).withMessage('Reservation duration must be between 5 and 120 minutes'),
+  handleValidationErrors,
+  invalidateCache('inventory')
+], asyncHandler(InventoryController.reserveInventory));
+
+/**
+ * @swagger
+ * /api/v1/inventory/reservations/{id}/release:
+ *   post:
+ *     summary: Release inventory reservation
+ *     tags: [Inventory]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               reason:
+ *                 type: string
+ *                 maxLength: 500
+ *     responses:
+ *       200:
+ *         description: Reservation released successfully
+ *       404:
+ *         description: Reservation not found
+ */
+router.post('/reservations/:id/release', [
+  body('reason').optional().trim().isLength({ max: 500 }).withMessage('Reason must be less than 500 characters'),
+  handleValidationErrors,
+  invalidateCache('inventory')
+], asyncHandler(InventoryController.releaseReservation));
+
+/**
+ * @swagger
+ * /api/v1/inventory/reorder-alerts/check:
+ *   post:
+ *     summary: Manually trigger reorder alert check
+ *     tags: [Inventory]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Reorder alert check completed
+ */
+router.post('/reorder-alerts/check', [
+  authorize(['supplier', 'platform_admin']),
+  invalidateCache('inventory')
+], asyncHandler(async (req, res) => {
+  try {
+    const result = await reorderAlertService.checkAndSendReorderAlerts();
+
+    res.json({
+      message: 'Reorder alert check completed',
+      ...result
+    });
+  } catch (error) {
+    logger.error('Failed to check reorder alerts:', error);
+    throw error;
+  }
+}));
+
+/**
+ * @swagger
+ * /api/v1/inventory/metrics:
+ *   get:
+ *     summary: Get inventory metrics for supplier
+ *     tags: [Inventory]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Inventory metrics retrieved successfully
+ */
+router.get('/metrics', [
+  cache(300) // Cache for 5 minutes
+], asyncHandler(async (req, res) => {
+  try {
+    const supplierId = req.user.id;
+
+    const metricsResult = await query(
+      'SELECT * FROM calculate_inventory_metrics($1)',
+      [supplierId]
+    );
+
+    const metrics = metricsResult.rows[0];
+
+    res.json({
+      message: 'Inventory metrics retrieved successfully',
+      metrics: {
+        totalItems: parseInt(metrics.total_items),
+        lowStockItems: parseInt(metrics.low_stock_items),
+        criticalItems: parseInt(metrics.critical_items),
+        totalValue: parseFloat(metrics.total_value),
+        reservedQuantity: parseInt(metrics.reserved_quantity),
+        stockHealthScore: metrics.total_items > 0 ?
+          Math.round(((metrics.total_items - metrics.low_stock_items) / metrics.total_items) * 100) : 100
+      }
+    });
+  } catch (error) {
+    logger.error('Failed to get inventory metrics:', {
+      error: error.message,
+      supplierId: req.user.id
+    });
+    throw error;
+  }
+}));
 
 module.exports = router;

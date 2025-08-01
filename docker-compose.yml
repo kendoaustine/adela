@@ -158,6 +158,9 @@ services:
       REDIS_URL: redis://redis:6379
       RABBITMQ_URL: amqp://gasconnect:gasconnect_password@rabbitmq:5672
       AUTH_SERVICE_URL: http://auth-service:3001
+      PAYSTACK_SECRET_KEY: ${PAYSTACK_SECRET_KEY:-sk_test_your_paystack_secret_key}
+      PAYSTACK_PUBLIC_KEY: ${PAYSTACK_PUBLIC_KEY:-pk_test_your_paystack_public_key}
+      PAYSTACK_WEBHOOK_SECRET: ${PAYSTACK_WEBHOOK_SECRET:-your_paystack_webhook_secret}
     ports:
       - "3003:3003"
     depends_on:

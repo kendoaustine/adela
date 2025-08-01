@@ -4,10 +4,22 @@ const Order = require('../models/Order');
 const { publishEvent } = require('../services/rabbitmq');
 const logger = require('../utils/logger');
 const { ValidationError, NotFoundError, BusinessLogicError } = require('../middleware/errorHandler');
+const { query, transaction } = require('../database/connection');
 
 // Initialize service clients
 const authServiceClient = new AuthServiceClient();
 const supplierServiceClient = new SupplierServiceClient();
+
+// Initialize service manager
+let serviceManager = null;
+const initializeServiceManager = async () => {
+  if (!serviceManager) {
+    const ServiceManager = require('../services/serviceManager');
+    serviceManager = new ServiceManager();
+    await serviceManager.initialize();
+  }
+  return serviceManager;
+};
 
 class OrdersController {
   /**
@@ -78,15 +90,18 @@ class OrdersController {
     const authToken = req.headers.authorization;
 
     try {
+      // Initialize service manager if needed
+      const sm = await initializeServiceManager();
+
       // 1. Validate delivery address belongs to user
-      const address = await serviceManager.getAddressById(deliveryAddressId, authToken);
+      const address = await sm.getAddressById(deliveryAddressId, authToken);
       if (!address) {
         throw new ValidationError('Invalid delivery address');
       }
 
       // 2. Check inventory availability
-      const availability = await serviceManager.checkInventoryAvailability(supplierId, items, authToken);
-      
+      const availability = await sm.checkInventoryAvailability(supplierId, items, authToken);
+
       // Validate all items are available
       const unavailableItems = [];
       for (const item of items) {
@@ -109,11 +124,11 @@ class OrdersController {
 
       // 3. Calculate pricing
       const customerType = req.user.role === 'household' ? 'retail' : 'wholesale';
-      const pricing = await serviceManager.calculateOrderPricing(supplierId, items, customerType, authToken);
+      const pricing = await sm.calculateOrderPricing(supplierId, items, customerType, authToken);
 
       // 4. Calculate delivery fee
       const deliveryFee = await Order.calculateDeliveryFee(supplierId, deliveryAddressId, orderType);
-      
+
       // 5. Calculate totals
       const subtotal = pricing.subtotal;
       const taxAmount = subtotal * 0.075; // 7.5% VAT
@@ -122,7 +137,7 @@ class OrdersController {
       // 6. Reserve inventory
       let reservationId = null;
       try {
-        const reservation = await serviceManager.reserveInventory(supplierId, items, null, authToken);
+        const reservation = await sm.reserveInventory(supplierId, items, null, authToken);
         reservationId = reservation.reservationId;
       } catch (error) {
         logger.warn('Failed to reserve inventory, proceeding without reservation:', error.message);
@@ -151,7 +166,7 @@ class OrdersController {
 
       // 8. Update inventory quantities
       try {
-        await serviceManager.updateInventoryQuantities(supplierId, items, authToken);
+        await sm.updateInventoryQuantities(supplierId, items, authToken);
       } catch (error) {
         logger.error('Failed to update inventory quantities:', error.message);
         // Don't fail the order creation, but log for manual intervention
@@ -222,9 +237,12 @@ class OrdersController {
       const supplierIds = [...new Set(orders.map(order => order.supplierId))];
       const supplierInfo = {};
 
+      // Initialize service manager if needed
+      const sm = await initializeServiceManager();
+
       for (const supplierId of supplierIds) {
         try {
-          const supplier = await serviceManager.getSupplierInfo(supplierId, authToken);
+          const supplier = await sm.getSupplierInfo(supplierId, authToken);
           supplierInfo[supplierId] = supplier;
         } catch (error) {
           logger.warn(`Failed to get supplier info for ${supplierId}:`, error.message);
@@ -274,7 +292,7 @@ class OrdersController {
 
     try {
       const order = await Order.findById(id);
-      
+
       if (!order) {
         throw new NotFoundError('Order not found');
       }
@@ -287,10 +305,13 @@ class OrdersController {
       // Get order items
       const items = await order.getItems();
 
+      // Initialize service manager if needed
+      const sm = await initializeServiceManager();
+
       // Get supplier information
       let supplierInfo = null;
       try {
-        supplierInfo = await serviceManager.getSupplierInfo(order.supplierId, authToken);
+        supplierInfo = await sm.getSupplierInfo(order.supplierId, authToken);
       } catch (error) {
         logger.warn('Failed to get supplier info:', error.message);
         supplierInfo = { id: order.supplierId, name: 'Unknown Supplier' };
@@ -299,7 +320,7 @@ class OrdersController {
       // Get delivery address
       let deliveryAddress = null;
       try {
-        deliveryAddress = await serviceManager.getAddressById(order.deliveryAddressId, authToken);
+        deliveryAddress = await sm.getAddressById(order.deliveryAddressId, authToken);
       } catch (error) {
         logger.warn('Failed to get delivery address:', error.message);
       }
@@ -393,6 +414,75 @@ class OrdersController {
       logger.error('Failed to cancel order:', {
         error: error.message,
         orderId: id,
+        userId
+      });
+      throw error;
+    }
+  }
+
+
+
+  /**
+   * Update order status
+   */
+  static async updateOrderStatus(req, res) {
+    const { id } = req.params;
+    const { status, notes } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+
+    try {
+      // Validate status transition
+      const validStatuses = ['pending', 'confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'];
+      if (!validStatuses.includes(status)) {
+        throw new ValidationError('Invalid order status');
+      }
+
+      // Get current order
+      const currentOrder = await Order.findById(id);
+      if (!currentOrder) {
+        throw new NotFoundError('Order not found');
+      }
+
+      // Check permissions - use userId property instead of customerId
+      if (userRole === 'household' && currentOrder.userId !== userId) {
+        throw new ValidationError('Unauthorized to update this order');
+      }
+
+      // Update order status using instance method
+      await currentOrder.updateStatus(status, notes, userId);
+
+      // Publish status update event
+      await publishEvent('orders.events', 'order.status_updated', {
+        eventType: 'order.status_updated',
+        orderId: id,
+        oldStatus: currentOrder.status,
+        newStatus: status,
+        updatedBy: userId,
+        notes,
+        timestamp: new Date().toISOString()
+      });
+
+      logger.info('Order status updated', {
+        orderId: id,
+        oldStatus: currentOrder.status,
+        newStatus: status,
+        updatedBy: userId
+      });
+
+      res.json({
+        message: 'Order status updated successfully',
+        order: {
+          id,
+          status,
+          updatedAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      logger.error('Failed to update order status:', {
+        error: error.message,
+        orderId: id,
+        status,
         userId
       });
       throw error;

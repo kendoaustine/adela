@@ -159,7 +159,7 @@
 **Implementation Details**:
 - **GET /payments**: Payment history with filtering
 - **Wallet Management**: Balance tracking, transactions
-- **Stripe Integration**: Payment processing, webhooks
+- **Paystack Integration**: Payment processing, webhooks
 - **Escrow System**: 7-day payment holding
 - **Database**: `supplier.payments`, `supplier.wallet_transactions`
 

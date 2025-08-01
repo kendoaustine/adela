@@ -98,6 +98,7 @@ app.use('/api/v1/delivery', deliveryRoutes);
 app.use('/api/v1/cylinders', cylinderRoutes);
 app.use('/api/v1/tracking', trackingRoutes);
 app.use('/health', healthRoutes);
+app.use('/api/v1/health', healthRoutes);
 
 // Setup Swagger documentation
 setupSwagger(app);
@@ -113,6 +114,7 @@ app.get('/', (req, res) => {
     status: 'running',
     endpoints: {
       health: '/health',
+      healthApi: '/api/v1/health',
       docs: '/api/docs',
       orders: '/api/v1/orders',
       delivery: '/api/v1/delivery',

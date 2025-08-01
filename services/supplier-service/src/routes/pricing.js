@@ -1,8 +1,31 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
-const { asyncHandler } = require('../middleware/errorHandler');
+const { body, query, validationResult } = require('express-validator');
+const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
+const { authenticate, authorize, requestId } = require('../middleware/auth');
+const { cache, invalidateCache } = require('../middleware/cache');
+const PricingController = require('../controllers/pricingController');
 
 const router = express.Router();
+
+// Apply authentication and request ID to all routes
+router.use(requestId);
+router.use(authenticate);
+router.use(authorize('supplier')); // Only suppliers can manage pricing
+
+// Validation middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const validationErrors = errors.array().map(error => ({
+      field: error.path,
+      message: error.msg,
+      value: error.value,
+    }));
+
+    throw new ValidationError('Validation failed', validationErrors);
+  }
+  next();
+};
 
 /**
  * @swagger
@@ -26,10 +49,36 @@ const router = express.Router();
  *       200:
  *         description: Pricing retrieved successfully
  */
-router.get('/', asyncHandler(async (req, res) => {
-  // TODO: Implement get pricing logic
-  res.json({ message: 'Get pricing - to be implemented' });
-}));
+router.get('/', [
+  query('gasType')
+    .optional()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage('Gas type filter must not be empty'),
+  query('customerType')
+    .optional()
+    .isIn(['retail', 'wholesale', 'bulk', 'emergency', 'household'])
+    .withMessage('Invalid customer type'),
+  query('cylinderSize')
+    .optional()
+    .trim()
+    .isLength({ min: 1 })
+    .withMessage('Cylinder size filter must not be empty'),
+  query('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive filter must be boolean'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('offset')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Offset must be 0 or greater'),
+  handleValidationErrors,
+  cache(300) // Cache for 5 minutes
+], asyncHandler(PricingController.getPricing));
 
 /**
  * @swagger
@@ -87,22 +136,37 @@ router.get('/', asyncHandler(async (req, res) => {
 router.post('/', [
   body('gasTypeId').isUUID().withMessage('Valid gas type ID is required'),
   body('cylinderSize').trim().notEmpty().withMessage('Cylinder size is required'),
+  body('customerType')
+    .isIn(['retail', 'wholesale', 'bulk', 'emergency', 'household'])
+    .withMessage('Invalid customer type'),
   body('basePrice').isFloat({ min: 0 }).withMessage('Base price must be non-negative'),
-  body('promotionalPrice').optional().isFloat({ min: 0 }).withMessage('Promotional price must be non-negative'),
-  body('bulkDiscountThreshold').optional().isInt({ min: 1 }).withMessage('Bulk discount threshold must be at least 1'),
-  body('bulkDiscountPercentage').optional().isFloat({ min: 0, max: 50 }).withMessage('Bulk discount percentage must be between 0 and 50'),
-  body('emergencySurchargePercentage').optional().isFloat({ min: 0, max: 100 }).withMessage('Emergency surcharge must be between 0 and 100'),
-  body('deliveryFee').optional().isFloat({ min: 0 }).withMessage('Delivery fee must be non-negative'),
-  body('validUntil').optional().isISO8601().withMessage('Valid until must be a valid date'),
-], asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  // TODO: Implement create pricing logic
-  res.status(201).json({ message: 'Create pricing - to be implemented' });
-}));
+  body('minQuantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Min quantity must be at least 1'),
+  body('maxQuantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Max quantity must be at least 1'),
+  body('discountPercentage')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Discount must be between 0 and 100'),
+  body('validFrom')
+    .optional()
+    .isISO8601()
+    .withMessage('Valid from date must be in ISO format'),
+  body('validUntil')
+    .optional()
+    .isISO8601()
+    .withMessage('Valid until date must be in ISO format'),
+  body('priority')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Priority must be at least 1'),
+  handleValidationErrors,
+  invalidateCache('pricing')
+], asyncHandler(PricingController.createPricingRule));
 
 /**
  * @swagger
@@ -125,10 +189,42 @@ router.post('/', [
  *       404:
  *         description: Pricing rule not found
  */
-router.put('/:id', asyncHandler(async (req, res) => {
-  // TODO: Implement update pricing logic
-  res.json({ message: 'Update pricing - to be implemented' });
-}));
+router.put('/:id', [
+  body('basePrice')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Base price must be non-negative'),
+  body('minQuantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Min quantity must be at least 1'),
+  body('maxQuantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Max quantity must be at least 1'),
+  body('discountPercentage')
+    .optional()
+    .isFloat({ min: 0, max: 100 })
+    .withMessage('Discount must be between 0 and 100'),
+  body('validFrom')
+    .optional()
+    .isISO8601()
+    .withMessage('Valid from date must be in ISO format'),
+  body('validUntil')
+    .optional()
+    .isISO8601()
+    .withMessage('Valid until date must be in ISO format'),
+  body('priority')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Priority must be at least 1'),
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be boolean'),
+  handleValidationErrors,
+  invalidateCache('pricing')
+], asyncHandler(PricingController.updatePricingRule));
 
 /**
  * @swagger
@@ -149,33 +245,48 @@ router.put('/:id', asyncHandler(async (req, res) => {
  *       200:
  *         description: Pricing rule activated successfully
  */
-router.post('/:id/activate', asyncHandler(async (req, res) => {
-  // TODO: Implement activate pricing logic
-  res.json({ message: 'Activate pricing - to be implemented' });
-}));
+// Delete pricing rule
+router.delete('/:id', [
+  invalidateCache('pricing')
+], asyncHandler(PricingController.deletePricingRule));
 
-/**
- * @swagger
- * /api/v1/pricing/{id}/deactivate:
- *   post:
- *     summary: Deactivate pricing rule
- *     tags: [Pricing]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Pricing rule deactivated successfully
- */
-router.post('/:id/deactivate', asyncHandler(async (req, res) => {
-  // TODO: Implement deactivate pricing logic
-  res.json({ message: 'Deactivate pricing - to be implemented' });
-}));
+// Calculate price for items
+router.post('/calculate', [
+  body('items')
+    .isArray({ min: 1 })
+    .withMessage('Items array is required'),
+  body('items.*.gasTypeId')
+    .isUUID()
+    .withMessage('Valid gas type ID is required for each item'),
+  body('items.*.cylinderSize')
+    .trim()
+    .notEmpty()
+    .withMessage('Cylinder size is required for each item'),
+  body('items.*.quantity')
+    .isInt({ min: 1 })
+    .withMessage('Quantity must be at least 1 for each item'),
+  body('customerType')
+    .optional()
+    .isIn(['retail', 'wholesale', 'bulk', 'emergency', 'household'])
+    .withMessage('Invalid customer type'),
+  handleValidationErrors
+], asyncHandler(PricingController.calculatePrice));
+
+// Get bulk pricing options
+router.get('/bulk', [
+  query('gasTypeId')
+    .isUUID()
+    .withMessage('Valid gas type ID is required'),
+  query('cylinderSize')
+    .trim()
+    .notEmpty()
+    .withMessage('Cylinder size is required'),
+  query('customerType')
+    .optional()
+    .isIn(['retail', 'wholesale', 'bulk', 'emergency', 'household'])
+    .withMessage('Invalid customer type'),
+  handleValidationErrors,
+  cache(600) // Cache for 10 minutes
+], asyncHandler(PricingController.getBulkPricing));
 
 module.exports = router;

@@ -77,9 +77,10 @@ const config = {
   
   // Payment configuration
   payments: {
-    stripe: {
-      secretKey: process.env.STRIPE_SECRET_KEY,
-      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
+    paystack: {
+      secretKey: process.env.PAYSTACK_SECRET_KEY,
+      publicKey: process.env.PAYSTACK_PUBLIC_KEY,
+      webhookSecret: process.env.PAYSTACK_WEBHOOK_SECRET,
     },
     currency: process.env.PAYMENT_CURRENCY || 'NGN',
     escrowDays: 7, // Days to hold payment in escrow
@@ -113,6 +114,35 @@ const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     format: process.env.LOG_FORMAT || 'json',
+  },
+
+  // Email configuration
+  email: {
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.SMTP_PORT, 10) || 587,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    },
+    from: process.env.FROM_EMAIL || 'noreply@gasconnect.com',
+  },
+
+  // SMS configuration
+  sms: {
+    provider: process.env.SMS_PROVIDER || 'twilio',
+    twilio: {
+      accountSid: process.env.TWILIO_ACCOUNT_SID,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+      phoneNumber: process.env.TWILIO_PHONE_NUMBER,
+    },
+  },
+
+  // App configuration
+  app: {
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
   },
   
   // Cron job schedules

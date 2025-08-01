@@ -46,6 +46,12 @@ class ConflictError extends AppError {
   }
 }
 
+class BusinessLogicError extends AppError {
+  constructor(message = 'Business logic error') {
+    super(message, 422, 'BUSINESS_LOGIC_ERROR');
+  }
+}
+
 class RateLimitError extends AppError {
   constructor(message = 'Too many requests', retryAfter = null) {
     super(message, 429, 'RATE_LIMIT_ERROR');
@@ -223,6 +229,7 @@ module.exports = {
   AuthorizationError,
   NotFoundError,
   ConflictError,
+  BusinessLogicError,
   RateLimitError,
   DatabaseError,
   ExternalServiceError,

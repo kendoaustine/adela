@@ -2,12 +2,14 @@ const User = require('../models/User');
 const JWTService = require('../services/jwt');
 const { sessionService, otpService } = require('../services/redis');
 const { eventService } = require('../services/rabbitmq');
+const emailService = require('../services/email');
+const smsService = require('../services/sms');
 const logger = require('../utils/logger');
-const { 
-  ValidationError, 
-  AuthenticationError, 
+const {
+  ValidationError,
+  AuthenticationError,
   ConflictError,
-  NotFoundError 
+  NotFoundError
 } = require('../middleware/errorHandler');
 
 class AuthController {
@@ -49,6 +51,13 @@ class AuthController {
       loginAt: new Date().toISOString(),
     });
 
+    // Send welcome email
+    const welcomeEmailResult = await emailService.sendWelcomeEmail(
+      user.email,
+      firstName || email.split('@')[0],
+      role
+    );
+
     // Publish user created event
     await eventService.userCreated({
       id: user.id,
@@ -57,7 +66,11 @@ class AuthController {
       profile: { firstName, lastName, businessName },
     });
 
-    logger.logAuth('user_registered', user.id, { email, role });
+    logger.logAuth('user_registered', user.id, {
+      email,
+      role,
+      welcomeEmailSent: welcomeEmailResult.success
+    });
 
     res.status(201).json({
       message: 'User registered successfully',
@@ -230,20 +243,28 @@ class AuthController {
 
     // Generate verification token
     const verificationToken = require('crypto').randomBytes(32).toString('hex');
-    
+
     // Store token in Redis with 24 hour expiry
     const { cacheService } = require('../services/redis');
     await cacheService.set(`email_verification:${user.id}`, verificationToken, 24 * 60 * 60);
 
-    // TODO: Send email with verification link
-    // For now, we'll just return the token (in production, this should be sent via email)
-    
-    logger.logAuth('email_verification_sent', user.id);
+    // Send email with verification link
+    const userName = user.firstName || user.email.split('@')[0];
+    const emailResult = await emailService.sendEmailVerification(
+      user.email,
+      verificationToken,
+      userName
+    );
+
+    logger.logAuth('email_verification_sent', user.id, {
+      emailSent: emailResult.success,
+      reason: emailResult.reason
+    });
 
     res.json({
-      message: 'Email verification sent',
-      // Remove this in production
-      verificationToken: verificationToken,
+      message: 'Email verification sent successfully',
+      emailSent: emailResult.success,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
     });
   }
 
@@ -295,19 +316,28 @@ class AuthController {
 
     // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    
+
     // Store OTP
     await otpService.setOTP(user.phone, otp, 'phone_verification');
 
-    // TODO: Send SMS with OTP
-    // For now, we'll just return the OTP (in production, this should be sent via SMS)
-    
-    logger.logAuth('phone_verification_sent', user.id, { phone: user.phone });
+    // Send SMS with OTP
+    const userName = user.firstName || '';
+    const smsResult = await smsService.sendPhoneVerification(
+      user.phone,
+      otp,
+      userName
+    );
+
+    logger.logAuth('phone_verification_sent', user.id, {
+      phone: smsService.maskPhoneNumber(user.phone),
+      smsSent: smsResult.success,
+      reason: smsResult.reason
+    });
 
     res.json({
-      message: 'Phone verification OTP sent',
-      // Remove this in production
-      otp: otp,
+      message: 'Phone verification OTP sent successfully',
+      smsSent: smsResult.success,
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() // 10 minutes
     });
   }
 
@@ -368,17 +398,25 @@ class AuthController {
       [user.id, hashedToken]
     );
 
-    // TODO: Send email/SMS with reset link
-    
+    // Send password reset email
+    const userName = user.firstName || user.email.split('@')[0];
+    const emailResult = await emailService.sendPasswordReset(
+      user.email,
+      resetToken,
+      userName
+    );
+
     // Publish password reset event
     await eventService.passwordReset(user.id, user.email);
 
-    logger.logAuth('password_reset_requested', user.id);
+    logger.logAuth('password_reset_requested', user.id, {
+      emailSent: emailResult.success,
+      reason: emailResult.reason
+    });
 
     res.json({
       message: 'If the account exists, a password reset link has been sent',
-      // Remove this in production
-      resetToken: resetToken,
+      emailSent: emailResult.success
     });
   }
 

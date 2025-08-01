@@ -84,6 +84,7 @@ app.use('/api/v1/payments', paymentsRoutes);
 app.use('/api/v1/analytics', analyticsRoutes);
 app.use('/api/v1/bundles', bundlesRoutes);
 app.use('/health', healthRoutes);
+app.use('/api/v1/health', healthRoutes);
 
 // Setup Swagger documentation
 setupSwagger(app);
@@ -96,6 +97,7 @@ app.get('/', (req, res) => {
     status: 'running',
     endpoints: {
       health: '/health',
+      healthApi: '/api/v1/health',
       docs: '/api/docs',
       inventory: '/api/v1/inventory',
       pricing: '/api/v1/pricing',

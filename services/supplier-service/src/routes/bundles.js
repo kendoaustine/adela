@@ -1,8 +1,31 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
-const { asyncHandler } = require('../middleware/errorHandler');
+const { body, query, validationResult } = require('express-validator');
+const { asyncHandler, ValidationError } = require('../middleware/errorHandler');
+const { authenticate, authorize, requestId } = require('../middleware/auth');
+const { cache, invalidateCache } = require('../middleware/cache');
+const BundleController = require('../controllers/bundleController');
 
 const router = express.Router();
+
+// Apply authentication and request ID to all routes
+router.use(requestId);
+router.use(authenticate);
+router.use(authorize('supplier')); // Only suppliers can manage bundles
+
+// Validation middleware
+const handleValidationErrors = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const validationErrors = errors.array().map(error => ({
+      field: error.path,
+      message: error.msg,
+      value: error.value,
+    }));
+
+    throw new ValidationError('Validation failed', validationErrors);
+  }
+  next();
+};
 
 /**
  * @swagger
@@ -27,10 +50,30 @@ const router = express.Router();
  *       200:
  *         description: Bundles retrieved successfully
  */
-router.get('/', asyncHandler(async (req, res) => {
-  // TODO: Implement get bundles logic
-  res.json({ message: 'Get bundles - to be implemented' });
-}));
+router.get('/', [
+  query('bundleType')
+    .optional()
+    .isIn(['discount', 'bulk', 'seasonal', 'loyalty'])
+    .withMessage('Invalid bundle type'),
+  query('targetAudience')
+    .optional()
+    .isIn(['all', 'new_customers', 'returning_customers', 'vip_customers'])
+    .withMessage('Invalid target audience'),
+  query('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be boolean'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('offset')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Offset must be 0 or greater'),
+  handleValidationErrors,
+  cache(300) // Cache for 5 minutes
+], asyncHandler(BundleController.getBundles));
 
 /**
  * @swagger
@@ -95,25 +138,39 @@ router.get('/', asyncHandler(async (req, res) => {
  *         description: Validation error
  */
 router.post('/', [
-  body('name').trim().isLength({ min: 1, max: 255 }).withMessage('Bundle name is required and must be less than 255 characters'),
-  body('description').optional().trim().isLength({ max: 1000 }).withMessage('Description must be less than 1000 characters'),
-  body('bundleItems').isArray({ min: 1 }).withMessage('At least one bundle item is required'),
-  body('bundleItems.*.gasTypeId').isUUID().withMessage('Valid gas type ID is required'),
-  body('bundleItems.*.quantity').isInt({ min: 1 }).withMessage('Quantity must be at least 1'),
-  body('originalPrice').isFloat({ min: 0 }).withMessage('Original price must be non-negative'),
-  body('bundlePrice').isFloat({ min: 0 }).withMessage('Bundle price must be non-negative'),
-  body('maxRedemptions').optional().isInt({ min: 1 }).withMessage('Max redemptions must be at least 1'),
-  body('validUntil').optional().isISO8601().withMessage('Valid until must be a valid date'),
-  body('targetUserRoles').optional().isArray().withMessage('Target user roles must be an array'),
-], asyncHandler(async (req, res) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  // TODO: Implement create bundle logic
-  res.status(201).json({ message: 'Create bundle - to be implemented' });
-}));
+  body('name')
+    .trim()
+    .isLength({ min: 1, max: 255 })
+    .withMessage('Name is required and must be less than 255 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Description cannot exceed 1000 characters'),
+  body('bundleType')
+    .optional()
+    .isIn(['discount', 'bulk', 'seasonal', 'loyalty'])
+    .withMessage('Invalid bundle type'),
+  body('discountType')
+    .optional()
+    .isIn(['percentage', 'fixed_amount', 'buy_x_get_y'])
+    .withMessage('Invalid discount type'),
+  body('discountValue')
+    .isFloat({ min: 0 })
+    .withMessage('Discount value must be non-negative'),
+  body('items')
+    .isArray({ min: 1 })
+    .withMessage('Items array is required and must contain at least one item'),
+  body('items.*.gasTypeId')
+    .isUUID()
+    .withMessage('Valid gas type ID is required for each item'),
+  body('items.*.cylinderSize')
+    .trim()
+    .notEmpty()
+    .withMessage('Cylinder size is required for each item'),
+  handleValidationErrors,
+  invalidateCache('bundles')
+], asyncHandler(BundleController.createBundle));
 
 /**
  * @swagger
@@ -136,83 +193,88 @@ router.post('/', [
  *       404:
  *         description: Bundle not found
  */
-router.get('/:id', asyncHandler(async (req, res) => {
-  // TODO: Implement get bundle by ID logic
-  res.json({ message: 'Get bundle by ID - to be implemented' });
-}));
+// Update bundle
+router.put('/:id', [
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 255 })
+    .withMessage('Name must be less than 255 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Description cannot exceed 1000 characters'),
+  body('discountValue')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Discount value must be non-negative'),
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be boolean'),
+  handleValidationErrors,
+  invalidateCache('bundles')
+], asyncHandler(BundleController.updateBundle));
 
-/**
- * @swagger
- * /api/v1/bundles/{id}:
- *   put:
- *     summary: Update bundle
- *     tags: [Bundles]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Bundle updated successfully
- *       404:
- *         description: Bundle not found
- */
-router.put('/:id', asyncHandler(async (req, res) => {
-  // TODO: Implement update bundle logic
-  res.json({ message: 'Update bundle - to be implemented' });
-}));
+// Delete bundle
+router.delete('/:id', [
+  invalidateCache('bundles')
+], asyncHandler(BundleController.deleteBundle));
 
-/**
- * @swagger
- * /api/v1/bundles/{id}/activate:
- *   post:
- *     summary: Activate bundle
- *     tags: [Bundles]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Bundle activated successfully
- */
-router.post('/:id/activate', asyncHandler(async (req, res) => {
-  // TODO: Implement activate bundle logic
-  res.json({ message: 'Activate bundle - to be implemented' });
-}));
+// Calculate bundle discount
+router.post('/calculate', [
+  body('items')
+    .isArray({ min: 1 })
+    .withMessage('Items array is required'),
+  body('items.*.gasTypeId')
+    .isUUID()
+    .withMessage('Valid gas type ID is required for each item'),
+  body('items.*.cylinderSize')
+    .trim()
+    .notEmpty()
+    .withMessage('Cylinder size is required for each item'),
+  body('items.*.quantity')
+    .isInt({ min: 1 })
+    .withMessage('Quantity must be at least 1 for each item'),
+  body('items.*.unitPrice')
+    .isFloat({ min: 0 })
+    .withMessage('Unit price must be non-negative for each item'),
+  body('customerId')
+    .optional()
+    .isUUID()
+    .withMessage('Valid customer ID is required'),
+  body('customerType')
+    .optional()
+    .isIn(['new_customers', 'returning_customers', 'vip_customers'])
+    .withMessage('Invalid customer type'),
+  handleValidationErrors
+], asyncHandler(BundleController.calculateBundleDiscount));
 
-/**
- * @swagger
- * /api/v1/bundles/{id}/deactivate:
- *   post:
- *     summary: Deactivate bundle
- *     tags: [Bundles]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Bundle deactivated successfully
- */
-router.post('/:id/deactivate', asyncHandler(async (req, res) => {
-  // TODO: Implement deactivate bundle logic
-  res.json({ message: 'Deactivate bundle - to be implemented' });
-}));
+// Get bundle usage statistics
+router.get('/usage/statistics', [
+  query('bundleId')
+    .optional()
+    .isUUID()
+    .withMessage('Valid bundle ID is required'),
+  query('startDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Start date must be in ISO format'),
+  query('endDate')
+    .optional()
+    .isISO8601()
+    .withMessage('End date must be in ISO format'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('offset')
+    .optional()
+    .isInt({ min: 0 })
+    .withMessage('Offset must be 0 or greater'),
+  handleValidationErrors,
+  cache(300) // Cache for 5 minutes
+], asyncHandler(BundleController.getBundleUsage));
 
 module.exports = router;

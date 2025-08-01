@@ -9,9 +9,14 @@ class PricingController {
    */
   static async getPricing(req, res) {
     const supplierId = req.user.id;
-    const { gasType, customerType, cylinderSize, isActive = true, limit = 20, offset = 0 } = req.query;
+    let { gasType, customerType, cylinderSize, isActive = true, limit = 20, offset = 0 } = req.query;
 
     try {
+      // Map household customer type to retail for pricing calculations
+      if (customerType === 'household') {
+        customerType = 'retail';
+      }
+
       let whereClause = 'WHERE p.supplier_id = $1';
       const queryParams = [supplierId];
       let paramIndex = 2;
@@ -455,11 +460,16 @@ class PricingController {
    */
   static async calculatePrice(req, res) {
     const supplierId = req.user.id;
-    const { items, customerType = 'retail' } = req.body;
+    let { items, customerType = 'retail' } = req.body;
 
     try {
       if (!Array.isArray(items) || items.length === 0) {
         throw new ValidationError('Items array is required');
+      }
+
+      // Map household customer type to retail for pricing calculations
+      if (customerType === 'household') {
+        customerType = 'retail';
       }
 
       const calculations = [];
@@ -476,7 +486,7 @@ class PricingController {
         const pricingQuery = `
           SELECT pr.*, gt.name as gas_type_name
           FROM supplier.pricing_rules pr
-          JOIN orders.gas_types gt ON pr.gas_type_id = gt.id
+          JOIN supplier.gas_types gt ON pr.gas_type_id = gt.id
           WHERE pr.supplier_id = $1
           AND pr.gas_type_id = $2
           AND pr.cylinder_size = $3
@@ -557,18 +567,23 @@ class PricingController {
    */
   static async getBulkPricing(req, res) {
     const supplierId = req.user.id;
-    const { gasTypeId, cylinderSize, customerType = 'wholesale' } = req.query;
+    let { gasTypeId, cylinderSize, customerType = 'wholesale' } = req.query;
 
     try {
       if (!gasTypeId || !cylinderSize) {
         throw new ValidationError('gasTypeId and cylinderSize are required');
       }
 
+      // Map household customer type to retail for pricing calculations
+      if (customerType === 'household') {
+        customerType = 'retail';
+      }
+
       // Get all bulk pricing tiers for this item
       const bulkQuery = `
         SELECT pr.*, gt.name as gas_type_name
         FROM supplier.pricing_rules pr
-        JOIN orders.gas_types gt ON pr.gas_type_id = gt.id
+        JOIN supplier.gas_types gt ON pr.gas_type_id = gt.id
         WHERE pr.supplier_id = $1
         AND pr.gas_type_id = $2
         AND pr.cylinder_size = $3

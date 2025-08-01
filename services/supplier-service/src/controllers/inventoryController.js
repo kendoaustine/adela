@@ -123,7 +123,7 @@ class InventoryController {
 
       // Verify gas type exists
       const gasTypeResult = await query(
-        'SELECT id, name FROM orders.gas_types WHERE id = $1',
+        'SELECT id, name FROM supplier.gas_types WHERE id = $1',
         [gasTypeId]
       );
 
@@ -336,7 +336,7 @@ class InventoryController {
           gt.name as gas_type_name,
           gt.description as gas_type_description
         FROM supplier.inventory i
-        JOIN orders.gas_types gt ON i.gas_type_id = gt.id
+        JOIN supplier.gas_types gt ON i.gas_type_id = gt.id
         WHERE i.supplier_id = $1 AND i.quantity_available <= i.reorder_level
         ORDER BY (i.quantity_available::float / i.reorder_level::float) ASC`,
         [supplierId]
@@ -380,6 +380,462 @@ class InventoryController {
         error: error.message,
         supplierId: req.user.id,
         requestId: req.requestId
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Restock inventory item
+   */
+  static async restockInventory(req, res) {
+    try {
+      const { id } = req.params;
+      const { quantity, notes, unitCost } = req.body;
+      const supplierId = req.user.id;
+
+      // Get current inventory item
+      const inventoryResult = await query(
+        'SELECT * FROM supplier.inventory WHERE id = $1 AND supplier_id = $2',
+        [id, supplierId]
+      );
+
+      if (inventoryResult.rows.length === 0) {
+        throw new NotFoundError('Inventory item not found');
+      }
+
+      const inventory = inventoryResult.rows[0];
+      const oldQuantity = inventory.quantity_available;
+      const newQuantity = oldQuantity + quantity;
+
+      // Start transaction
+      await query('BEGIN');
+
+      try {
+        // Update inventory quantity and optionally unit cost
+        const updateFields = ['quantity_available = $1', 'last_restocked_at = CURRENT_TIMESTAMP', 'updated_at = CURRENT_TIMESTAMP'];
+        const updateParams = [newQuantity];
+        let paramIndex = 2;
+
+        if (unitCost !== undefined) {
+          updateFields.push(`unit_cost = $${paramIndex}`);
+          updateParams.push(unitCost);
+          paramIndex++;
+        }
+
+        updateParams.push(id);
+
+        await query(`
+          UPDATE supplier.inventory
+          SET ${updateFields.join(', ')}
+          WHERE id = $${paramIndex}
+        `, updateParams);
+
+        // Log inventory transaction
+        await query(`
+          INSERT INTO supplier.inventory_transactions (
+            supplier_id, inventory_id, transaction_type, quantity_change,
+            quantity_before, quantity_after, notes, created_by
+          ) VALUES ($1, $2, 'restock', $3, $4, $5, $6, $7)
+        `, [supplierId, id, quantity, oldQuantity, newQuantity, notes, supplierId]);
+
+        await query('COMMIT');
+
+        // Get updated inventory with gas type info
+        const updatedResult = await query(`
+          SELECT i.*, gt.name as gas_type_name, gt.description as gas_type_description
+          FROM supplier.inventory i
+          JOIN supplier.gas_types gt ON i.gas_type_id = gt.id
+          WHERE i.id = $1
+        `, [id]);
+
+        const updatedInventory = updatedResult.rows[0];
+
+        // Publish restock event
+        await publishEvent('supplier.events', 'inventory.restocked', {
+          eventType: 'inventory.restocked',
+          supplierId,
+          inventoryId: id,
+          gasTypeId: inventory.gas_type_id,
+          cylinderSize: inventory.cylinder_size,
+          quantityAdded: quantity,
+          oldQuantity,
+          newQuantity,
+          unitCost: unitCost || inventory.unit_cost,
+          notes,
+          timestamp: new Date().toISOString()
+        });
+
+        logger.info('Inventory restocked', {
+          supplierId,
+          inventoryId: id,
+          quantityAdded: quantity,
+          oldQuantity,
+          newQuantity,
+          notes
+        });
+
+        res.json({
+          message: 'Inventory restocked successfully',
+          inventory: {
+            id: updatedInventory.id,
+            gasType: {
+              id: updatedInventory.gas_type_id,
+              name: updatedInventory.gas_type_name,
+              description: updatedInventory.gas_type_description
+            },
+            cylinderSize: updatedInventory.cylinder_size,
+            quantityAvailable: updatedInventory.quantity_available,
+            quantityAdded: quantity,
+            unitCost: parseFloat(updatedInventory.unit_cost),
+            lastRestocked: updatedInventory.last_restocked_at,
+            isLowStock: updatedInventory.quantity_available <= updatedInventory.reorder_level
+          }
+        });
+
+      } catch (error) {
+        await query('ROLLBACK');
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Failed to restock inventory:', {
+        error: error.message,
+        inventoryId: req.params.id,
+        supplierId: req.user.id,
+        quantity: req.body.quantity
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get available suppliers for specific inventory requirements
+   */
+  static async getAvailableSuppliers(req, res) {
+    try {
+      const { gasTypeId, cylinderSize, minQuantity, latitude, longitude, maxDistance = 50 } = req.query;
+
+      // Query suppliers with available inventory
+      const suppliersResult = await query(`
+        SELECT
+          u.id as supplier_id,
+          p.business_name as supplier_name,
+          sp.business_address,
+          sp.service_areas,
+          i.id as inventory_id,
+          i.quantity_available,
+          i.unit_cost,
+          pr.unit_price,
+          pr.bulk_discount_percentage,
+          pr.bulk_discount_threshold,
+          -- Calculate distance (simplified - in production use PostGIS)
+          CASE
+            WHEN sp.business_address ILIKE '%Lagos%' AND $6 ILIKE '%Lagos%' THEN 5
+            WHEN sp.business_address ILIKE '%Abuja%' AND $6 ILIKE '%Abuja%' THEN 5
+            WHEN sp.business_address ILIKE '%Port Harcourt%' AND $6 ILIKE '%Port Harcourt%' THEN 5
+            ELSE 25
+          END as distance_km,
+          -- Calculate supplier rating (mock for now - in production, calculate from reviews)
+          CASE
+            WHEN sp.is_verified = true THEN 4.5
+            ELSE 3.5
+          END as rating
+        FROM auth.users u
+        JOIN auth.profiles p ON u.id = p.user_id
+        JOIN auth.supplier_profiles sp ON u.id = sp.user_id
+        JOIN supplier.inventory i ON u.id = i.supplier_id
+        LEFT JOIN supplier.pricing pr ON (
+          u.id = pr.supplier_id
+          AND i.gas_type_id = pr.gas_type_id
+          AND i.cylinder_size = pr.cylinder_size
+          AND pr.customer_type = 'retail'
+          AND pr.is_active = true
+          AND (pr.effective_from IS NULL OR pr.effective_from <= CURRENT_DATE)
+          AND (pr.effective_until IS NULL OR pr.effective_until >= CURRENT_DATE)
+        )
+        WHERE u.role = 'supplier'
+        AND u.is_active = true
+        AND sp.is_verified = true
+        AND i.gas_type_id = $1
+        AND i.cylinder_size = $2
+        AND i.quantity_available >= $3
+        AND (
+          sp.service_areas IS NULL
+          OR $4 = ANY(sp.service_areas)
+          OR $5 = ANY(sp.service_areas)
+        )
+        ORDER BY distance_km ASC, rating DESC, pr.unit_price ASC NULLS LAST
+        LIMIT 20
+      `, [
+        gasTypeId,
+        cylinderSize,
+        minQuantity,
+        req.query.city || 'Lagos', // Default to Lagos if no city provided
+        req.query.state || 'Lagos State', // Default to Lagos State
+        req.query.city || 'Lagos'
+      ]);
+
+      // Calculate price rankings
+      const suppliers = suppliersResult.rows.map((row, index) => ({
+        supplierId: row.supplier_id,
+        supplierName: row.supplier_name,
+        inventoryId: row.inventory_id,
+        quantityAvailable: row.quantity_available,
+        unitCost: parseFloat(row.unit_cost),
+        unitPrice: row.unit_price ? parseFloat(row.unit_price) : parseFloat(row.unit_cost) * 1.3, // 30% markup if no pricing rule
+        bulkDiscountThreshold: row.bulk_discount_threshold,
+        bulkDiscountPercentage: row.bulk_discount_percentage ? parseFloat(row.bulk_discount_percentage) : 0,
+        distance: row.distance_km,
+        rating: parseFloat(row.rating),
+        businessAddress: row.business_address,
+        serviceAreas: row.service_areas,
+        priceRank: index + 1 // Simple ranking based on query order
+      }));
+
+      logger.info('Available suppliers retrieved', {
+        gasTypeId,
+        cylinderSize,
+        minQuantity,
+        suppliersFound: suppliers.length
+      });
+
+      res.json({
+        message: 'Available suppliers retrieved successfully',
+        suppliers,
+        searchCriteria: {
+          gasTypeId,
+          cylinderSize,
+          minQuantity: parseInt(minQuantity),
+          maxDistance: parseInt(maxDistance)
+        },
+        totalFound: suppliers.length
+      });
+    } catch (error) {
+      logger.error('Failed to get available suppliers:', {
+        error: error.message,
+        gasTypeId: req.query.gasTypeId,
+        cylinderSize: req.query.cylinderSize,
+        minQuantity: req.query.minQuantity
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Reserve inventory for an order (transaction-safe)
+   */
+  static async reserveInventory(req, res) {
+    try {
+      const { orderId, items, reservationDuration = 30 } = req.body; // 30 minutes default
+      const userId = req.user.id;
+
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new ValidationError('Items array is required');
+      }
+
+      const reservations = [];
+
+      // Start transaction
+      await query('BEGIN');
+
+      try {
+        for (const item of items) {
+          const { supplierId, gasTypeId, cylinderSize, quantity } = item;
+
+          // Check inventory availability with row-level locking
+          const inventoryResult = await query(`
+            SELECT id, quantity_available, quantity_reserved
+            FROM supplier.inventory
+            WHERE supplier_id = $1 AND gas_type_id = $2 AND cylinder_size = $3
+            FOR UPDATE
+          `, [supplierId, gasTypeId, cylinderSize]);
+
+          if (inventoryResult.rows.length === 0) {
+            throw new ValidationError(`No inventory found for supplier ${supplierId}, gas type ${gasTypeId}, size ${cylinderSize}`);
+          }
+
+          const inventory = inventoryResult.rows[0];
+          const availableQuantity = inventory.quantity_available - inventory.quantity_reserved;
+
+          if (availableQuantity < quantity) {
+            throw new ValidationError(`Insufficient inventory. Available: ${availableQuantity}, Requested: ${quantity}`);
+          }
+
+          // Update reserved quantity
+          await query(`
+            UPDATE supplier.inventory
+            SET quantity_reserved = quantity_reserved + $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+          `, [quantity, inventory.id]);
+
+          // Create reservation record
+          const reservationId = uuidv4();
+          await query(`
+            INSERT INTO supplier.inventory_reservations (
+              id, inventory_id, order_id, quantity, reserved_by, expires_at
+            ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '${reservationDuration} minutes')
+          `, [reservationId, inventory.id, orderId, quantity, userId]);
+
+          reservations.push({
+            reservationId,
+            inventoryId: inventory.id,
+            supplierId,
+            gasTypeId,
+            cylinderSize,
+            quantity,
+            expiresAt: new Date(Date.now() + reservationDuration * 60 * 1000).toISOString()
+          });
+
+          // Log inventory transaction
+          await query(`
+            INSERT INTO supplier.inventory_transactions (
+              supplier_id, inventory_id, transaction_type, quantity_change,
+              quantity_before, quantity_after, reference_id, reference_type, created_by
+            ) VALUES ($1, $2, 'reservation', $3, $4, $5, $6, 'order', $7)
+          `, [
+            supplierId,
+            inventory.id,
+            -quantity,
+            availableQuantity,
+            availableQuantity - quantity,
+            orderId,
+            userId
+          ]);
+        }
+
+        await query('COMMIT');
+
+        // Publish reservation event
+        await publishEvent('supplier.events', 'inventory.reserved', {
+          eventType: 'inventory.reserved',
+          orderId,
+          reservations,
+          reservedBy: userId,
+          timestamp: new Date().toISOString()
+        });
+
+        logger.info('Inventory reserved successfully', {
+          orderId,
+          reservationCount: reservations.length,
+          reservedBy: userId
+        });
+
+        res.json({
+          message: 'Inventory reserved successfully',
+          orderId,
+          reservations,
+          expiresIn: `${reservationDuration} minutes`
+        });
+
+      } catch (error) {
+        await query('ROLLBACK');
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Failed to reserve inventory:', {
+        error: error.message,
+        orderId: req.body.orderId,
+        userId: req.user.id
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Release inventory reservation
+   */
+  static async releaseReservation(req, res) {
+    try {
+      const { reservationId } = req.params;
+      const { reason } = req.body;
+      const userId = req.user.id;
+
+      // Start transaction
+      await query('BEGIN');
+
+      try {
+        // Get reservation details
+        const reservationResult = await query(`
+          SELECT r.*, i.supplier_id, i.gas_type_id, i.cylinder_size
+          FROM supplier.inventory_reservations r
+          JOIN supplier.inventory i ON r.inventory_id = i.id
+          WHERE r.id = $1 AND r.status = 'active'
+          FOR UPDATE
+        `, [reservationId]);
+
+        if (reservationResult.rows.length === 0) {
+          throw new NotFoundError('Active reservation not found');
+        }
+
+        const reservation = reservationResult.rows[0];
+
+        // Update inventory - release reserved quantity
+        await query(`
+          UPDATE supplier.inventory
+          SET quantity_reserved = quantity_reserved - $1, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [reservation.quantity, reservation.inventory_id]);
+
+        // Mark reservation as released
+        await query(`
+          UPDATE supplier.inventory_reservations
+          SET status = 'released', released_at = CURRENT_TIMESTAMP, release_reason = $1
+          WHERE id = $2
+        `, [reason || 'Manual release', reservationId]);
+
+        // Log inventory transaction
+        await query(`
+          INSERT INTO supplier.inventory_transactions (
+            supplier_id, inventory_id, transaction_type, quantity_change,
+            quantity_before, quantity_after, reference_id, reference_type, created_by
+          ) VALUES ($1, $2, 'release', $3, $4, $5, $6, 'reservation', $7)
+        `, [
+          reservation.supplier_id,
+          reservation.inventory_id,
+          reservation.quantity,
+          0, // We don't track before/after for releases
+          reservation.quantity,
+          reservationId,
+          userId
+        ]);
+
+        await query('COMMIT');
+
+        // Publish release event
+        await publishEvent('supplier.events', 'inventory.released', {
+          eventType: 'inventory.released',
+          reservationId,
+          orderId: reservation.order_id,
+          quantity: reservation.quantity,
+          reason,
+          releasedBy: userId,
+          timestamp: new Date().toISOString()
+        });
+
+        logger.info('Inventory reservation released', {
+          reservationId,
+          orderId: reservation.order_id,
+          quantity: reservation.quantity,
+          reason,
+          releasedBy: userId
+        });
+
+        res.json({
+          message: 'Inventory reservation released successfully',
+          reservationId,
+          orderId: reservation.order_id,
+          quantityReleased: reservation.quantity
+        });
+
+      } catch (error) {
+        await query('ROLLBACK');
+        throw error;
+      }
+    } catch (error) {
+      logger.error('Failed to release reservation:', {
+        error: error.message,
+        reservationId: req.params.reservationId,
+        userId: req.user.id
       });
       throw error;
     }

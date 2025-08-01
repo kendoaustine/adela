@@ -55,7 +55,7 @@ router.get('/detailed', async (req, res) => {
     ]);
 
     const healthCheck = {
-      service: 'gasconnect-auth-service',
+      service: 'gasconnect-supplier-service',
       status: 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
@@ -109,7 +109,7 @@ router.get('/detailed', async (req, res) => {
     logger.error('Health check failed:', error);
     
     const healthCheck = {
-      service: 'gasconnect-auth-service',
+      service: 'gasconnect-supplier-service',
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
       error: error.message,
