@@ -4,20 +4,21 @@
  * Database seeder for Auth Service
  */
 
-const { query } = require('./connection');
-const bcrypt = require('bcrypt');
+const { query, connectDatabase } = require('./connection');
+const argon2 = require('argon2');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 class DatabaseSeeder {
   constructor() {
-    this.saltRounds = 12;
+    // No need for saltRounds with argon2
   }
 
   /**
    * Hash password
    */
   async hashPassword(password) {
-    return await bcrypt.hash(password, this.saltRounds);
+    return await argon2.hash(password, config.password.argon2);
   }
 
   /**
@@ -41,12 +42,13 @@ class DatabaseSeeder {
       // Create admin user
       const adminResult = await query(`
         INSERT INTO auth.users (
-          email, password_hash, role, is_active, is_verified, 
+          email, phone, password_hash, role, is_active, is_verified,
           email_verified_at, phone_verified_at
-        ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ) VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
         RETURNING id
       `, [
         'admin@gasconnect.com',
+        '+2348000000000',
         adminPassword,
         'platform_admin',
         true,
@@ -104,10 +106,10 @@ class DatabaseSeeder {
       ];
 
       for (const userData of testUsers) {
-        // Check if user already exists
+        // Check if user already exists (by email or phone)
         const existingUser = await query(
-          'SELECT id FROM auth.users WHERE email = $1',
-          [userData.email]
+          'SELECT id FROM auth.users WHERE email = $1 OR phone = $2',
+          [userData.email, userData.phone]
         );
 
         if (existingUser.rows.length > 0) {
@@ -139,53 +141,61 @@ class DatabaseSeeder {
           VALUES ($1, $2, $3, $4)
         `, [userId, userData.firstName, userData.lastName, userData.businessName || null]);
 
-        // Create supplier profile if needed
+        // Create supplier profile if needed (skip if table doesn't exist)
         if (userData.role === 'supplier') {
-          await query(`
-            INSERT INTO auth.supplier_profiles (
-              user_id, business_registration_number, business_address,
-              business_phone, business_email, description, service_areas,
-              operating_hours, is_verified
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          `, [
-            userId,
-            'RC123456789',
-            '123 Business District, Lagos, Nigeria',
-            userData.phone,
-            userData.email,
-            'Premium gas supplier serving Lagos and surrounding areas',
-            ['Lagos', 'Ikeja', 'Victoria Island'],
-            JSON.stringify({
-              monday: { open: '08:00', close: '18:00' },
-              tuesday: { open: '08:00', close: '18:00' },
-              wednesday: { open: '08:00', close: '18:00' },
-              thursday: { open: '08:00', close: '18:00' },
-              friday: { open: '08:00', close: '18:00' },
-              saturday: { open: '09:00', close: '16:00' },
-              sunday: { closed: true }
-            }),
-            true
-          ]);
+          try {
+            await query(`
+              INSERT INTO auth.supplier_profiles (
+                user_id, business_registration_number, business_address,
+                business_phone, business_email, description, service_areas,
+                operating_hours, is_verified
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `, [
+              userId,
+              'RC123456789',
+              '123 Business District, Lagos, Nigeria',
+              userData.phone,
+              userData.email,
+              'Premium gas supplier serving Lagos and surrounding areas',
+              ['Lagos', 'Ikeja', 'Victoria Island'],
+              JSON.stringify({
+                monday: { open: '08:00', close: '18:00' },
+                tuesday: { open: '08:00', close: '18:00' },
+                wednesday: { open: '08:00', close: '18:00' },
+                thursday: { open: '08:00', close: '18:00' },
+                friday: { open: '08:00', close: '18:00' },
+                saturday: { open: '09:00', close: '16:00' },
+                sunday: { closed: true }
+              }),
+              true
+            ]);
+          } catch (error) {
+            logger.warn('Supplier profiles table not found, skipping supplier profile creation');
+          }
         }
 
-        // Create test address for household users
+        // Create test address for household users (skip if table doesn't exist)
         if (userData.role === 'household') {
-          await query(`
-            INSERT INTO auth.addresses (
-              user_id, label, address_line_1, city, state, country,
-              latitude, longitude, is_default
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-          `, [
-            userId,
-            'Home',
-            '456 Residential Street',
-            'Lagos',
-            'Lagos State',
-            'Nigeria',
-            6.5244, // Lagos coordinates
-            3.3792,
-            true
-          ]);
+          try {
+            await query(`
+              INSERT INTO auth.addresses (
+                user_id, label, address_line_1, city, state, country,
+                latitude, longitude, is_default
+              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            `, [
+              userId,
+              'Home',
+              '456 Residential Street',
+              'Lagos',
+              'Lagos State',
+              'Nigeria',
+              6.5244, // Lagos coordinates
+              3.3792,
+              true
+            ]);
+          } catch (error) {
+            logger.warn('Addresses table not found, skipping address creation');
+          }
         }
 
         logger.info(`Test user created: ${userData.email} (${userData.role})`);
@@ -209,10 +219,13 @@ class DatabaseSeeder {
   async runSeeders() {
     try {
       logger.info('Starting database seeding...');
-      
+
+      // Initialize database connection
+      await connectDatabase();
+
       await this.seedAdminUser();
       await this.seedTestUsers();
-      
+
       logger.info('Database seeding completed successfully');
     } catch (error) {
       logger.error('Database seeding failed:', error);
