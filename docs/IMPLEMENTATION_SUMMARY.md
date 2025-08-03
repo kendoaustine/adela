@@ -163,3 +163,230 @@ The GasConnect platform now has a **complete implementation roadmap** that will 
 - ✅ **Risk mitigation** through phased approach and testing
 
 **The foundation is solid, the plan is comprehensive, and the system is ready for business logic implementation!** 🎉
+
+---
+
+# Backend Implementation Gaps - Priority Action Plan
+
+## 🎯 Executive Summary
+
+**Status**: 13 endpoints/features need completion out of ~50 total endpoints
+**Impact**: Frontend development can proceed with 85% of functionality immediately
+**Timeline**: 4 weeks to complete all gaps
+**Priority**: 5 Critical, 3 High, 5 Medium priority items
+
+## 📋 Critical Priority (Week 1) - Frontend Blockers
+
+### 1. Order Tracking Endpoints (orders-service)
+**Impact**: Blocks customer order tracking experience
+
+```bash
+# Missing Routes
+GET /api/v1/tracking/:orderId
+POST /api/v1/tracking/:orderId/location
+```
+
+**Implementation Required**:
+- Create `trackingController.js` with order tracking logic
+- Add route handlers in `tracking.js`
+- Database queries for delivery tracking table
+- Real-time location updates for drivers
+
+**Acceptance Criteria**:
+- Customers can track order status and delivery location
+- Drivers can update their location during delivery
+- Real-time updates via WebSocket
+
+### 2. Address CRUD Completion (auth-service)
+**Impact**: Blocks complete address management
+
+```bash
+# Missing Routes
+PUT /api/v1/addresses/:id
+DELETE /api/v1/addresses/:id
+PUT /api/v1/addresses/:id/default
+```
+
+**Implementation Required**:
+- Add update/delete methods to `addressController.js`
+- Add route handlers in `addresses.js`
+- Validation for address updates
+- Default address switching logic
+
+**Acceptance Criteria**:
+- Users can edit existing addresses
+- Users can delete addresses (with validation)
+- Users can set any address as default
+
+## 🔥 High Priority (Week 2) - User Experience
+
+### 3. Real-time WebSocket Integration (orders-service)
+**Impact**: Blocks live order/delivery updates
+
+**Implementation Required**:
+- Complete WebSocket handlers in `websocket.js`
+- Integrate with order status changes
+- Driver location broadcasting
+- Customer notification system
+
+**Acceptance Criteria**:
+- Real-time order status updates
+- Live delivery tracking
+- Instant notifications for status changes
+
+### 4. Email/SMS Service Integration (auth-service)
+**Impact**: Blocks user verification and notifications
+
+**Implementation Required**:
+- Replace mock email service with SendGrid/AWS SES
+- Replace mock SMS service with Twilio
+- Environment configuration for API keys
+- Error handling and retry logic
+
+**Acceptance Criteria**:
+- Email verification working end-to-end
+- SMS OTP delivery functional
+- Order notifications via email/SMS
+
+### 5. Enhanced Delivery Tracking (orders-service)
+**Impact**: Blocks advanced tracking features
+
+**Implementation Required**:
+- Complete `GET /api/v1/delivery/:id/tracking`
+- Add GPS coordinate handling
+- Route optimization logic
+- ETA calculations
+
+## 🟡 Medium Priority (Week 3-4) - Enhancements
+
+### 6. Paystack Payment Integration (supplier-service)
+**Impact**: Blocks real payment processing
+
+**Implementation Required**:
+- Complete Paystack API integration
+- Webhook handling for payment confirmations
+- Escrow system implementation
+- Refund processing logic
+
+### 7. Cylinder QR Code System (orders-service)
+**Impact**: Blocks asset tracking
+
+**Implementation Required**:
+- QR code generation for cylinders
+- Scanning and validation logic
+- Cylinder lifecycle tracking
+- Maintenance scheduling
+
+### 8. Cloud File Storage (auth-service)
+**Impact**: Blocks scalable document storage
+
+**Implementation Required**:
+- AWS S3 or Google Cloud Storage integration
+- File upload/download handling
+- Security and access control
+- Document versioning
+
+### 9. Geolocation Services (orders-service)
+**Impact**: Blocks accurate delivery routing
+
+**Implementation Required**:
+- Google Maps API integration
+- Address geocoding
+- Distance calculations
+- Route optimization
+
+### 10. Cylinder Inspection Workflow (orders-service)
+**Impact**: Blocks safety compliance
+
+**Implementation Required**:
+- Inspection form handling
+- Safety checklist validation
+- Compliance reporting
+- Maintenance alerts
+
+## 🔄 Implementation Timeline
+
+### Week 1: Critical Blockers
+- **Day 1-2**: Order tracking endpoints
+- **Day 3-4**: Address CRUD completion
+- **Day 5**: Testing and integration
+
+### Week 2: User Experience
+- **Day 1-3**: WebSocket integration
+- **Day 4-5**: Email/SMS services
+
+### Week 3: Payment & Storage
+- **Day 1-3**: Paystack integration
+- **Day 4-5**: Cloud storage setup
+
+### Week 4: Advanced Features
+- **Day 1-2**: Geolocation services
+- **Day 3-4**: Cylinder systems
+- **Day 5**: Final testing
+
+## 📊 Frontend Impact Assessment
+
+### Can Start Immediately (85% functionality):
+- ✅ User authentication and profiles
+- ✅ Order placement and management
+- ✅ Supplier inventory management
+- ✅ Basic delivery management
+- ✅ Analytics and reporting
+
+### Requires Workarounds (10% functionality):
+- ⚠️ Address editing (use delete + create)
+- ⚠️ Order tracking (use status polling)
+- ⚠️ Real-time updates (use periodic refresh)
+
+### Blocked Until Implementation (5% functionality):
+- ❌ Advanced tracking features
+- ❌ Real-time notifications
+- ❌ Payment processing
+
+## 🤝 Coordination Protocol
+
+### Daily Standups:
+- Backend progress updates
+- Frontend integration blockers
+- API testing coordination
+
+### Weekly Reviews:
+- Gap closure progress
+- Integration testing results
+- Timeline adjustments
+
+### Communication Channels:
+- Slack: #backend-frontend-sync
+- Email: Critical blocker notifications
+- GitHub: Issue tracking and PRs
+
+## 🧪 Testing Strategy
+
+### API Testing:
+- Postman collections for new endpoints
+- Integration tests for critical paths
+- Load testing for real-time features
+
+### Frontend Integration:
+- Mock implementations for missing APIs
+- Progressive enhancement as APIs become available
+- End-to-end testing with real backend
+
+## 📈 Success Metrics
+
+### Week 1 Success:
+- Order tracking endpoints functional
+- Address CRUD complete
+- Frontend can integrate immediately
+
+### Week 2 Success:
+- Real-time features working
+- Notifications functional
+- Enhanced user experience
+
+### Week 4 Success:
+- All 13 gaps closed
+- Full frontend functionality
+- Production-ready system
+
+This coordination plan ensures frontend development can proceed immediately while backend gaps are systematically addressed.

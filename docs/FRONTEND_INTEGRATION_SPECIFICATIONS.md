@@ -12,6 +12,560 @@
 
 ---
 
+# Frontend API Integration Strategy
+
+## 🎯 Integration Overview
+
+**Status**: 85% of APIs ready for immediate integration
+**Strategy**: Progressive enhancement with graceful degradation
+**Timeline**: Start immediately with existing APIs, enhance as gaps are filled
+
+## 📊 API Readiness Matrix
+
+### ✅ Ready for Immediate Integration (85%)
+
+| Service | Endpoints | Status | Integration Priority |
+|---------|-----------|---------|---------------------|
+| **Auth Service** | Login, Register, Profile | ✅ Complete | **Critical** |
+| **Auth Service** | Address List/Create | ✅ Complete | **High** |
+| **Orders Service** | Order CRUD, Status | ✅ Complete | **Critical** |
+| **Orders Service** | Delivery Management | ✅ Complete | **High** |
+| **Supplier Service** | Inventory, Pricing | ✅ Complete | **Critical** |
+| **Supplier Service** | Analytics, Bundles | ✅ Complete | **Medium** |
+
+### ⚠️ Requires Workarounds (10%)
+
+| Service | Endpoints | Workaround Strategy | Timeline |
+|---------|-----------|-------------------|----------|
+| **Auth Service** | Address Edit/Delete | Delete + Create pattern | Week 1 |
+| **Orders Service** | Order Tracking | Status polling fallback | Week 1 |
+| **Orders Service** | Real-time Updates | Periodic refresh | Week 2 |
+
+### ❌ Blocked Until Implementation (5%)
+
+| Service | Endpoints | Impact | Expected |
+|---------|-----------|---------|----------|
+| **Orders Service** | Advanced Tracking | Enhanced UX | Week 2 |
+| **Supplier Service** | Payment Processing | Revenue | Week 3 |
+| **Auth Service** | Cloud Storage | Scalability | Week 4 |
+
+## 🔧 Integration Architecture
+
+### API Client Configuration
+
+```typescript
+// services/api/config.ts
+export const API_CONFIG = {
+  baseURLs: {
+    auth: process.env.REACT_APP_AUTH_SERVICE_URL || 'http://localhost:3001',
+    orders: process.env.REACT_APP_ORDERS_SERVICE_URL || 'http://localhost:3002',
+    supplier: process.env.REACT_APP_SUPPLIER_SERVICE_URL || 'http://localhost:3003'
+  },
+  timeout: 10000,
+  retries: 3,
+  retryDelay: 1000
+};
+
+// Feature flags for missing endpoints
+export const FEATURE_FLAGS = {
+  addressEditing: false, // Enable when PUT /addresses/:id ready
+  realTimeTracking: false, // Enable when WebSocket ready
+  paymentProcessing: false, // Enable when Paystack ready
+  advancedAnalytics: true, // Available now
+  fileUpload: true, // Local storage available
+  notifications: false // Enable when email/SMS ready
+};
+```
+
+### Progressive API Client
+
+```typescript
+// services/api/client.ts
+class ApiClient {
+  private baseURL: string;
+  private retryCount: number = 0;
+
+  constructor(baseURL: string) {
+    this.baseURL = baseURL;
+  }
+
+  async request<T>(endpoint: string, options: RequestOptions): Promise<T> {
+    try {
+      const response = await fetch(`${this.baseURL}${endpoint}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${TokenService.getAccessToken()}`,
+          ...options.headers
+        }
+      });
+
+      if (response.status === 401) {
+        await this.handleTokenRefresh();
+        return this.request(endpoint, options);
+      }
+
+      if (!response.ok) {
+        throw new ApiError(response.status, await response.text());
+      }
+
+      return response.json();
+    } catch (error) {
+      return this.handleError(error, endpoint, options);
+    }
+  }
+
+  private async handleError<T>(
+    error: any,
+    endpoint: string,
+    options: RequestOptions
+  ): Promise<T> {
+    // Graceful degradation for missing endpoints
+    if (error.status === 404 && this.isMissingEndpoint(endpoint)) {
+      return this.getMockResponse(endpoint);
+    }
+
+    // Retry logic for network errors
+    if (this.shouldRetry(error) && this.retryCount < API_CONFIG.retries) {
+      this.retryCount++;
+      await this.delay(API_CONFIG.retryDelay * this.retryCount);
+      return this.request(endpoint, options);
+    }
+
+    throw error;
+  }
+
+  private isMissingEndpoint(endpoint: string): boolean {
+    const missingEndpoints = [
+      '/api/v1/addresses/.*/(edit|delete|default)',
+      '/api/v1/tracking/.*',
+      '/api/v1/payments/process'
+    ];
+
+    return missingEndpoints.some(pattern =>
+      new RegExp(pattern).test(endpoint)
+    );
+  }
+
+  private getMockResponse(endpoint: string): any {
+    // Return appropriate mock responses for missing endpoints
+    if (endpoint.includes('/tracking/')) {
+      return {
+        status: 'pending',
+        location: null,
+        estimatedArrival: null,
+        message: 'Enhanced tracking coming soon'
+      };
+    }
+
+    return { message: 'Feature coming soon' };
+  }
+}
+```
+
+## 🔄 Graceful Degradation Strategies
+
+### 1. Address Management Workaround
+
+```typescript
+// services/api/addressService.ts
+class AddressService {
+  async updateAddress(id: string, data: AddressData): Promise<Address> {
+    if (FEATURE_FLAGS.addressEditing) {
+      // Use real endpoint when available
+      return this.apiClient.put(`/api/v1/addresses/${id}`, data);
+    } else {
+      // Workaround: Delete + Create pattern
+      const addresses = await this.getAddresses();
+      const oldAddress = addresses.find(addr => addr.id === id);
+
+      if (!oldAddress) throw new Error('Address not found');
+
+      // Delete old address (when endpoint available)
+      // For now, just create new and mark old as inactive client-side
+      const newAddress = await this.createAddress({
+        ...data,
+        isDefault: oldAddress.isDefault
+      });
+
+      // Store mapping for cleanup later
+      this.storeAddressMapping(id, newAddress.id);
+
+      return newAddress;
+    }
+  }
+
+  async deleteAddress(id: string): Promise<void> {
+    if (FEATURE_FLAGS.addressEditing) {
+      return this.apiClient.delete(`/api/v1/addresses/${id}`);
+    } else {
+      // Soft delete client-side until endpoint ready
+      this.markAddressDeleted(id);
+      throw new Error('Address deletion temporarily unavailable');
+    }
+  }
+
+  async setDefaultAddress(id: string): Promise<void> {
+    if (FEATURE_FLAGS.addressEditing) {
+      return this.apiClient.put(`/api/v1/addresses/${id}/default`);
+    } else {
+      // Client-side default management
+      const addresses = await this.getAddresses();
+      addresses.forEach(addr => {
+        addr.isDefault = addr.id === id;
+      });
+      this.cacheAddresses(addresses);
+    }
+  }
+}
+```
+
+### 2. Order Tracking Fallback
+
+```typescript
+// services/api/trackingService.ts
+class TrackingService {
+  async getOrderTracking(orderId: string): Promise<TrackingData> {
+    if (FEATURE_FLAGS.realTimeTracking) {
+      // Use real tracking endpoint
+      return this.apiClient.get(`/api/v1/tracking/${orderId}`);
+    } else {
+      // Fallback to order status polling
+      const order = await this.orderService.getOrder(orderId);
+      return this.convertOrderStatusToTracking(order);
+    }
+  }
+
+  private convertOrderStatusToTracking(order: Order): TrackingData {
+    const statusMap = {
+      'pending': { step: 1, message: 'Order received' },
+      'confirmed': { step: 2, message: 'Order confirmed' },
+      'preparing': { step: 3, message: 'Preparing your order' },
+      'out_for_delivery': { step: 4, message: 'Out for delivery' },
+      'delivered': { step: 5, message: 'Delivered' }
+    };
+
+    return {
+      orderId: order.id,
+      status: order.status,
+      currentStep: statusMap[order.status]?.step || 1,
+      message: statusMap[order.status]?.message || 'Processing',
+      estimatedArrival: order.scheduledDeliveryDate,
+      location: null, // Not available in fallback
+      isRealTime: false
+    };
+  }
+
+  // Upgrade to real-time when WebSocket available
+  subscribeToRealTimeUpdates(orderId: string, callback: (data: TrackingData) => void) {
+    if (FEATURE_FLAGS.realTimeTracking) {
+      // WebSocket subscription
+      this.websocketService.subscribe(`order:${orderId}`, callback);
+    } else {
+      // Polling fallback
+      const interval = setInterval(async () => {
+        const tracking = await this.getOrderTracking(orderId);
+        callback(tracking);
+      }, 30000); // Poll every 30 seconds
+
+      return () => clearInterval(interval);
+    }
+  }
+}
+```
+
+### 3. Payment Processing Preparation
+
+```typescript
+// services/api/paymentService.ts
+class PaymentService {
+  async processPayment(paymentData: PaymentData): Promise<PaymentResult> {
+    if (FEATURE_FLAGS.paymentProcessing) {
+      // Real Paystack integration
+      return this.apiClient.post('/api/v1/payments/process', paymentData);
+    } else {
+      // Mock payment for development
+      return this.mockPaymentProcess(paymentData);
+    }
+  }
+
+  private async mockPaymentProcess(data: PaymentData): Promise<PaymentResult> {
+    // Simulate payment processing delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    return {
+      success: true,
+      transactionId: `mock_${Date.now()}`,
+      amount: data.amount,
+      currency: data.currency,
+      status: 'completed',
+      message: 'Payment processed (mock mode)'
+    };
+  }
+
+  // Prepare for real Paystack integration
+  async initializePaystack(orderData: OrderData): Promise<PaystackInitResponse> {
+    const paystackData = {
+      email: orderData.customerEmail,
+      amount: orderData.totalAmount * 100, // Convert to kobo
+      currency: 'NGN',
+      reference: `gasconnect_${orderData.orderId}_${Date.now()}`,
+      callback_url: `${window.location.origin}/payment/callback`,
+      metadata: {
+        orderId: orderData.orderId,
+        customerId: orderData.customerId
+      }
+    };
+
+    if (FEATURE_FLAGS.paymentProcessing) {
+      return this.apiClient.post('/api/v1/payments/initialize', paystackData);
+    } else {
+      return this.mockPaystackInit(paystackData);
+    }
+  }
+}
+```
+
+## 🔄 Real-time Updates Strategy
+
+### WebSocket Integration with Fallback
+
+```typescript
+// services/websocket/websocketService.ts
+class WebSocketService {
+  private socket: Socket | null = null;
+  private fallbackIntervals: Map<string, NodeJS.Timeout> = new Map();
+
+  connect(): void {
+    if (FEATURE_FLAGS.realTimeTracking) {
+      this.socket = io(API_CONFIG.baseURLs.orders, {
+        auth: {
+          token: TokenService.getAccessToken()
+        }
+      });
+
+      this.socket.on('connect', () => {
+        console.log('WebSocket connected');
+        this.clearAllFallbacks();
+      });
+
+      this.socket.on('disconnect', () => {
+        console.log('WebSocket disconnected, falling back to polling');
+        this.activateFallbacks();
+      });
+    }
+  }
+
+  subscribe(channel: string, callback: (data: any) => void): () => void {
+    if (this.socket?.connected) {
+      // Real-time subscription
+      this.socket.on(channel, callback);
+      return () => this.socket?.off(channel, callback);
+    } else {
+      // Polling fallback
+      return this.createPollingFallback(channel, callback);
+    }
+  }
+
+  private createPollingFallback(channel: string, callback: (data: any) => void): () => void {
+    const interval = setInterval(async () => {
+      try {
+        const data = await this.fetchChannelData(channel);
+        callback(data);
+      } catch (error) {
+        console.warn(`Polling fallback failed for ${channel}:`, error);
+      }
+    }, 10000); // Poll every 10 seconds
+
+    this.fallbackIntervals.set(channel, interval);
+
+    return () => {
+      clearInterval(interval);
+      this.fallbackIntervals.delete(channel);
+    };
+  }
+
+  private async fetchChannelData(channel: string): Promise<any> {
+    // Convert WebSocket channel to REST endpoint
+    if (channel.startsWith('order:')) {
+      const orderId = channel.split(':')[1];
+      return this.trackingService.getOrderTracking(orderId);
+    }
+
+    return null;
+  }
+}
+```
+
+## 📱 Feature Flag Management
+
+```typescript
+// services/featureFlags/featureFlags.ts
+class FeatureFlagService {
+  private flags: Map<string, boolean> = new Map();
+
+  constructor() {
+    this.initializeFlags();
+    this.setupDynamicUpdates();
+  }
+
+  private initializeFlags(): void {
+    // Load from environment or API
+    Object.entries(FEATURE_FLAGS).forEach(([key, value]) => {
+      this.flags.set(key, value);
+    });
+  }
+
+  private setupDynamicUpdates(): void {
+    // Check for backend endpoint availability
+    setInterval(async () => {
+      await this.checkEndpointAvailability();
+    }, 60000); // Check every minute
+  }
+
+  private async checkEndpointAvailability(): void {
+    const checks = [
+      { flag: 'addressEditing', endpoint: '/api/v1/addresses/test/edit' },
+      { flag: 'realTimeTracking', endpoint: '/api/v1/tracking/test' },
+      { flag: 'paymentProcessing', endpoint: '/api/v1/payments/health' }
+    ];
+
+    for (const check of checks) {
+      try {
+        await fetch(`${API_CONFIG.baseURLs.auth}${check.endpoint}`, {
+          method: 'HEAD'
+        });
+        this.enableFeature(check.flag);
+      } catch {
+        // Endpoint not available yet
+      }
+    }
+  }
+
+  isEnabled(flag: string): boolean {
+    return this.flags.get(flag) || false;
+  }
+
+  enableFeature(flag: string): void {
+    if (!this.flags.get(flag)) {
+      this.flags.set(flag, true);
+      this.notifyFeatureEnabled(flag);
+    }
+  }
+
+  private notifyFeatureEnabled(flag: string): void {
+    // Notify components that feature is now available
+    window.dispatchEvent(new CustomEvent('featureEnabled', {
+      detail: { flag }
+    }));
+  }
+}
+```
+
+## 🧪 Testing Strategy
+
+### API Integration Tests
+
+```typescript
+// tests/integration/apiIntegration.test.ts
+describe('API Integration', () => {
+  describe('Existing Endpoints', () => {
+    test('should authenticate user successfully', async () => {
+      const response = await authService.login({
+        identifier: 'test@example.com',
+        password: 'password123'
+      });
+
+      expect(response.user).toBeDefined();
+      expect(response.tokens.accessToken).toBeDefined();
+    });
+
+    test('should create order with real API', async () => {
+      const order = await orderService.createOrder({
+        supplierId: 'test-supplier-id',
+        deliveryAddressId: 'test-address-id',
+        items: [{ gasTypeId: 'test-gas-id', quantity: 1, unitPrice: 1000 }]
+      });
+
+      expect(order.id).toBeDefined();
+      expect(order.status).toBe('pending');
+    });
+  });
+
+  describe('Missing Endpoints', () => {
+    test('should handle missing tracking endpoint gracefully', async () => {
+      const tracking = await trackingService.getOrderTracking('test-order-id');
+
+      expect(tracking.isRealTime).toBe(false);
+      expect(tracking.message).toContain('coming soon');
+    });
+
+    test('should fallback to polling for real-time updates', async () => {
+      const mockCallback = jest.fn();
+      const unsubscribe = trackingService.subscribeToRealTimeUpdates(
+        'test-order-id',
+        mockCallback
+      );
+
+      // Wait for polling interval
+      await new Promise(resolve => setTimeout(resolve, 1100));
+
+      expect(mockCallback).toHaveBeenCalled();
+      unsubscribe();
+    });
+  });
+
+  describe('Feature Flags', () => {
+    test('should enable features when endpoints become available', async () => {
+      // Mock endpoint becoming available
+      fetchMock.mockResponseOnce('', { status: 200 });
+
+      await featureFlagService.checkEndpointAvailability();
+
+      expect(featureFlagService.isEnabled('addressEditing')).toBe(true);
+    });
+  });
+});
+```
+
+## 📈 Monitoring & Analytics
+
+```typescript
+// services/monitoring/apiMonitoring.ts
+class ApiMonitoringService {
+  trackApiCall(endpoint: string, method: string, duration: number, success: boolean): void {
+    // Track API performance and success rates
+    analytics.track('api_call', {
+      endpoint,
+      method,
+      duration,
+      success,
+      timestamp: Date.now()
+    });
+  }
+
+  trackFeatureUsage(feature: string, fallbackUsed: boolean): void {
+    // Track which features are being used and fallback frequency
+    analytics.track('feature_usage', {
+      feature,
+      fallbackUsed,
+      timestamp: Date.now()
+    });
+  }
+
+  trackEndpointAvailability(endpoint: string, available: boolean): void {
+    // Track when missing endpoints become available
+    analytics.track('endpoint_availability', {
+      endpoint,
+      available,
+      timestamp: Date.now()
+    });
+  }
+}
+```
+
+This integration strategy ensures the frontend can start development immediately while gracefully handling missing backend endpoints and progressively enhancing as they become available.
+
 ## **1. API Documentation**
 
 ### **Service Endpoints Overview**
